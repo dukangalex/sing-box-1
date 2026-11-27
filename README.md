@@ -18,9 +18,8 @@
 - [11.主体目录文件及说明](README.md#11主体目录文件及说明)
 - [12.自签证书在不同客户端中的处理方式对比](README.md#12自签证书在不同客户端中的处理方式对比)
 - [13.鸣谢下列作者的文章和项目](README.md#13鸣谢下列作者的文章和项目)
-- [14.感谢赞助商](README.md#14感谢赞助商)
-- [15.免责声明](README.md#15免责声明)
-- [16.开源证书](README.md#16开源证书)
+- [14.免责声明](README.md#14免责声明)
+- [15.开源证书](README.md#15开源证书)
 
 
 * * *
@@ -484,9 +483,7 @@ bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-b
 
 ## 5.Json Argo Tunnel 获取 (推荐)
 
-### 用户可以通过 Cloudflare Json 生成网轻松获取: https://fscarmen.cloudflare.now.cc
-
-<img width="784" alt="image" src="https://github.com/fscarmen/sba/assets/62703343/fb7c6e90-fb3e-4e77-bcd4-407e4660a33c">
+### Json 凭据即 cloudflared 创建隧道后生成的 credentials 文件内容，可通过 Cloudflare 官方方式（Zero Trust 控制台创建隧道，或本地运行 cloudflared 生成）取得。
 
 如想手动，可以参考，以 Debian 为例，需要用到的命令，[Deron Cheng - CloudFlare Argo Tunnel 试用](https://zhengweidong.com/try-cloudflare-argo-tunnel)
 
@@ -786,48 +783,12 @@ services:
 千歌 sing-box 模板: https://github.com/chika0801/sing-box-examples
 zmlu 的 Cloudflare Tunnel 管理脚本: https://raw.githubusercontent.com/zmlu/sba/main/tunnel.sh
 
-## 14.感谢赞助商
-
-### 🚀 Sponsored by SharonNetworks
-
-<a href="https://sharon.io/">
-  <img src="https://framerusercontent.com/assets/3bMljdaUFNDFvMzdG9S0NjYmhSY.png" width="30%" alt="sharon.io">
-</a>
-
-本项目的构建与发布环境由 SharonNetworks 提供支持 —— 专注亚太顶级回国优化线路，高带宽、低延迟直连中国大陆，内置强大高防 DDoS 清洗能力。
-
-SharonNetworks 为您的业务起飞保驾护航！
-
-#### ✨ 服务优势
-
-* 亚太三网回程优化直连中国大陆，下载快到飞起
-* 超大带宽 + 抗攻击清洗服务，保障业务安全稳定
-* 多节点覆盖（香港、新加坡、日本、台湾、韩国）
-* 高防护力、高速网络；港/日/新 CDN 即将上线
-
-想体验同款构建环境？欢迎 [访问 Sharon 官网](https://sharon.io) 或 [加入 Telegram 群组](https://t.me/SharonNetwork) 了解更多并申请赞助。
-
-### 感谢 vps.town 对本项目的支持和赞助
-
-<a href="https://vps.town" align="left">
-  <img src="https://vps.town/static/images/sponsor.png" alt="Sponsor" width="30%">
-</a>
-
-体验 VPS.Town 的速度、稳定性和安全性一体化云计算解决方案 - 专为推动您的业务创新而设计。
-
-#### ✨ 服务优势
-
-* 安全的记忆。您值得信赖的伙伴
-
-* 坚如磐石的数据中心。高枕无忧
-
-
-## 15.免责声明
+## 14.免责声明
 * 本程序仅供学习了解, 非盈利目的，请于下载后 24 小时内删除, 不得用作任何商业用途, 文字、数据及图片均有所属版权, 如转载须注明来源。
 * 使用本程序必循遵守部署免责声明。使用本程序必循遵守部署服务器所在地、所在国家和用户所在国家的法律法规, 程序作者不对使用者任何不当行为负责。
 
 
-## 16.开源证书
+## 15.开源证书
 * 本项目严格遵守 GNU GPL v3 许可证 [LICENSE](LICENSE)。
 * 任何形式的复制、分发、修改或衍生使用，必须完整保留原版权声明、许可证文本，并以相同许可证开源发布。违反此条款（如闭源使用、商业独占或未开源修改版）将被视为抄袭，作者保留追究法律责任的权利。
 * 鼓励社区贡献，但请通过 Pull Request 提交。
