@@ -32,11 +32,11 @@
 - 定性：私钥离开本机且走 URL 查询串（易被日志留存），属凭据级外发，不可接受。
 - 处置（2026-11-26）：兜底分支已删除。无 xxd 时改为调用脚本既有 error() 报错退出（中英双语），明示原因（派生公钥需要 xxd、私钥不会发往任何在线服务）与 remedy（安装 xxd 后重试，或不指定 REALITY_PRIVATE 让脚本本地生成新密钥对）；不静默降级、不换用其他在线服务。自动生成密钥对的本地流程（generate_reality_keypair）未动。grep 复查 realitykey 零残留，bash -n 复验通过。
 
-### C.下载的二进制无完整性校验，且大量使用 --no-check-certificate
+### C.【已处置，见加固台账】下载的二进制无完整性校验，且大量使用 --no-check-certificate
 - sing-box、jq、qrencode、cloudflared 均直接下载解压 / 执行，全仓无 sha256 / 签名校验（grep 实证）；`--no-check-certificate` 在 sing-box.sh 出现 37 处、docker_init.sh 10 处。
 - 风险：下载通道被劫持时无从发现。自有化迭代建议：对官方 Release 补 sha256 对照（官方 releases 附带校验文件时）。
 
-### D.GitHub 下载经第三方反代加速节点
+### D.【已处置，见加固台账】GitHub 下载经第三方反代加速节点
 - sing-box.sh:7 `GITHUB_PROXY=('https://ghproxy.lvedong.eu.org/' 'https://accel.cloudflare.nyc.mn/')`，sing-box.sh:26 另有优选 IP 探测 `ip.cloudflare.now.cc / ip.cloudflare.nyc.mn`（作者自有服务）。
 - 脚本会探测并选用可用代理前缀下载二进制与订阅模板（sing-box.sh:588-603）。经第三方代理下载 + 无校验和（疑点 C）叠加，风险更高。建议：自有化版默认直连官方源，代理改为用户显式可选配置。
 
@@ -94,8 +94,8 @@
 
 | 项 | 风险 | 处置方向 | 状态 |
 |---|---|---|---|
-| C | 下载的 sing-box / cloudflared / jq / qrencode 二进制无完整性校验，--no-check-certificate 共 47 处 | 用 GitHub API 返回的资产 sha256 digest 逐个校验（已实证 SagerNet Release 资产带 digest 字段，如 sing-box-1.14.5-linux-amd64-musl.tar.gz 有 sha256 值；上游虽不发校验文件，API digest 可用）；校验不过即中止。逐处去掉 --no-check-certificate 需逐站核对证书情况、分批做 | 待排期（方案已备） |
-| D | 下载可经第三方 GitHub 反代（ghproxy.lvedong.eu.org、accel.cloudflare.nyc.mn）与作者优选 IP 服务 | 与 C 联动：补齐 digest 校验后，反代只影响可用性、不影响完整性；默认仍建议直连官方源、反代改显式可选 | 待排期（随 C） |
+| C | 下载的 sing-box / cloudflared / jq / qrencode 二进制无完整性校验，--no-check-certificate 共 47 处 | 已落地：新增 gh_release_download / gh_file_download 两道校验门——Release 资产用 GitHub 官方 API 的 sha256 digest 校验，仓库文件（模板、qrencode、force_version）用 git trees 的 blob sha 按 git blob 规则校验，不过即删档中止并给 remedy（稍后重试或设 GITHUB_TOKEN 提 API 额度）；47 处 --no-check-certificate 与 curl -k 已全清（两脚本 grep 零残留）。jq 固定版由 1.7.1 升 1.8.1（1.7.1 的资产无 digest、1.8.1 有）。校验链已实测：解析对活体 API JSON 命中、jq 1.8.1 真实下载校验通过且可运行、API 额度不足时失败关闭。注：远程 rule-set（.srs）由 sing-box 内核按配置直拉官方仓，不经脚本下载，不在本项范围 | 已处置 |
+| D | 下载可经第三方 GitHub 反代（ghproxy.lvedong.eu.org、accel.cloudflare.nyc.mn）与作者优选 IP 服务 | 已落地：check_cdn 的自动探测 / 自动启用反代逻辑整段删除，默认直连官方源；仅当用户显式设置环境变量 GH_PROXY 时才经其指定地址下载，且校验仍走官方 API、完整性判定不受代理影响。grep 复查 ghproxy / GITHUB_PROXY 默认表零残留 | 已处置 |
 | E | 菜单远程脚本直跑（tcpx / argox / sba / tcp.hy2.sh）与 WARP 注册远程 api.sh | 逐项评估：能本地化的本地化；不能的在菜单文案明示来源与风险，或整项移除 | 待评估 |
 | G | Docker 版写死共享 WARP 私钥 | 移植 VPS 版的 WARP 预注册逻辑，为每个部署生成独立账户；或明确提示用户自备 | 待排期 |
 

@@ -24,17 +24,45 @@ case "$ARCH" in
     ;;
 esac
 
+GH_PROXY=${GH_PROXY:-}
+
+# === 下载完整性校验（自有化加固，同 VPS 版口径） ===
+# 经 GitHub 官方 API 获取 Release 资产的 sha256 digest，下载后校验；不过即删档并失败返回。
+# $1=owner/repo $2=tag 或 latest $3=资产名 $4=输出文件
+gh_release_download() {
+  local REPO=$1 TAG=$2 ASSET=$3 OUT=$4 API_URL DIGEST DL_URL AUTH=()
+  [ -n "$GITHUB_TOKEN" ] && AUTH=(--header="Authorization: Bearer $GITHUB_TOKEN")
+  if [ "$TAG" = 'latest' ]; then API_URL="https://api.github.com/repos/${REPO}/releases/latest"; DL_URL="https://github.com/${REPO}/releases/latest/download/${ASSET}"; else API_URL="https://api.github.com/repos/${REPO}/releases/tags/${TAG}"; DL_URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"; fi
+  DIGEST=$(wget -qO- --tries=2 --timeout=10 "${AUTH[@]}" "$API_URL" 2>/dev/null | awk -v n="\"name\": \"$ASSET\"" 'index($0,n){f=1} f && /"digest":/ {gsub(/[" ,]/,"",$0); sub(/^digest:sha256:/,"",$0); print; exit}')
+  [ -n "$DIGEST" ] || { warning "\n 无法从 GitHub 官方 API 获取 ${ASSET} 的 sha256 校验值，下载已中止。处理办法: 稍后重试，或设置 GITHUB_TOKEN 环境变量提高 API 额度后重试。 / Cannot obtain the sha256 digest of ${ASSET} from the official GitHub API; download aborted. \n"; return 1; }
+  wget -qO "$OUT" --tries=2 --timeout=20 "${GH_PROXY}${DL_URL}" 2>/dev/null || { rm -f "$OUT"; warning "\n 下载 ${ASSET} 失败。 / Failed to download ${ASSET}. \n"; return 1; }
+  echo "${DIGEST}  ${OUT}" | sha256sum -c - >/dev/null 2>&1 || { rm -f "$OUT"; warning "\n ${ASSET} 的 sha256 校验不通过，文件已删除，安装中止。 / sha256 verification failed for ${ASSET}; the file was deleted and installation aborted. \n"; return 1; }
+}
+
+# 经 GitHub 官方 API（git trees）获取仓库文件的 blob sha，下载后按 git blob 规则校验；不过即删档并失败返回。
+# $1=owner/repo $2=分支 $3=仓库内路径 $4=输出文件 $5=原始下载地址（不含代理前缀）
+gh_file_download() {
+  local REPO=$1 REF=$2 RPATH=$3 OUT=$4 RAW=$5 SHA CALC AUTH=()
+  [ -n "$GITHUB_TOKEN" ] && AUTH=(--header="Authorization: Bearer $GITHUB_TOKEN")
+  SHA=$(wget -qO- --tries=2 --timeout=10 "${AUTH[@]}" "https://api.github.com/repos/${REPO}/git/trees/${REF}?recursive=1" 2>/dev/null | awk -v p="\"path\": \"$RPATH\"" 'index($0,p){f=1} f && /"sha":/ {gsub(/[" ,]/,"",$0); sub(/^sha:/,"",$0); print; exit}')
+  [ -n "$SHA" ] || { warning "\n 无法从 GitHub 官方 API 获取 ${RPATH} 的校验值，下载已中止。处理办法: 稍后重试，或设置 GITHUB_TOKEN 环境变量提高 API 额度后重试。 / Cannot obtain the checksum of ${RPATH} from the official GitHub API; download aborted. \n"; return 1; }
+  wget -qO "$OUT" --tries=2 --timeout=20 "${GH_PROXY}${RAW}" 2>/dev/null || { rm -f "$OUT"; warning "\n 下载 ${RPATH} 失败。 / Failed to download ${RPATH}. \n"; return 1; }
+  CALC=$( { printf 'blob %s\0' "$(wc -c < "$OUT")"; cat "$OUT"; } | sha1sum | awk '{print $1}' )
+  [ "$CALC" = "$SHA" ] || { rm -f "$OUT"; warning "\n ${RPATH} 的校验不通过，文件已删除，安装中止。 / Checksum verification failed for ${RPATH}; the file was deleted and installation aborted. \n"; return 1; }
+}
+
 # 检查 sing-box 最新版本
 check_latest_sing-box() {
   # 检查是否强制指定版本
-  local FORCE_VERSION=$(wget --no-check-certificate --tries=2 --timeout=3 -qO- https://raw.githubusercontent.com/fscarmen/sing-box/refs/heads/main/force_version | sed 's/^[vV]//g')
+  gh_file_download 'fscarmen/sing-box' 'main' 'force_version' /tmp/force_version 'https://raw.githubusercontent.com/fscarmen/sing-box/main/force_version' >/dev/null 2>&1
+  local FORCE_VERSION=$(sed 's/^[vV]//g' /tmp/force_version 2>/dev/null)
 
   # 没有强制指定版本时，获取最新版本
   if grep -q '.' <<< "$FORCE_VERSION"; then
     echo "$FORCE_VERSION"
     return
   else
-    local VERSION_LIST=$(wget --no-check-certificate --tries=2 --timeout=3 -qO- https://api.github.com/repos/SagerNet/sing-box/releases | sed -n '/tag_name/ s/^[ ]*//gp')
+    local VERSION_LIST=$(wget --tries=2 --timeout=3 -qO- https://api.github.com/repos/SagerNet/sing-box/releases | sed -n '/tag_name/ s/^[ ]*//gp')
     local LATEST_VERSION=$(awk -F '["v-]' '/tag_name/{print $5}' <<< "$VERSION_LIST" | sort -Vr | sed -n '1p')
 
     # 获取最终版本号
@@ -47,19 +75,19 @@ install() {
   # 下载 sing-box
   echo "正在下载 sing-box ..."
   local ONLINE=$(check_latest_sing-box)
-  wget https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz -O- | tar xz -C ${WORK_DIR} sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box && mv ${WORK_DIR}/sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box ${WORK_DIR}/sing-box && rm -rf ${WORK_DIR}/sing-box-$ONLINE-linux-$SING_BOX_ARCH
+  gh_release_download 'SagerNet/sing-box' "v$ONLINE" "sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz" ${WORK_DIR}/sing-box.tar.gz && tar xz -C ${WORK_DIR} -f ${WORK_DIR}/sing-box.tar.gz sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box && mv ${WORK_DIR}/sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box ${WORK_DIR}/sing-box && rm -rf ${WORK_DIR}/sing-box-$ONLINE-linux-$SING_BOX_ARCH ${WORK_DIR}/sing-box.tar.gz
 
   # 下载 jq
   echo "正在下载 jq ..."
-  wget -O ${WORK_DIR}/jq https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH && chmod +x ${WORK_DIR}/jq
+  gh_release_download 'jqlang/jq' 'jq-1.8.1' "jq-linux-$JQ_ARCH" ${WORK_DIR}/jq && chmod +x ${WORK_DIR}/jq
 
   # 下载 qrencode
   echo "正在下载 qrencode ..."
-  wget -O ${WORK_DIR}/qrencode https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH && chmod +x ${WORK_DIR}/qrencode
+  gh_file_download 'fscarmen/client_template' 'main' "qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" ${WORK_DIR}/qrencode "https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" && chmod +x ${WORK_DIR}/qrencode
 
   # 下载 cloudflared
   echo "正在下载 cloudflared ..."
-  wget -O ${WORK_DIR}/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH && chmod +x ${WORK_DIR}/cloudflared
+  gh_release_download 'cloudflare/cloudflared' 'latest' "cloudflared-linux-$ARGO_ARCH" ${WORK_DIR}/cloudflared && chmod +x ${WORK_DIR}/cloudflared
 
   # 生成100年的自签证书，区分使用 IPv4 / IPv6 / 域名
   echo "生成自签证书 ..."
@@ -748,7 +776,7 @@ EOF
       local ROOT_DOMAIN=${ARGO_DOMAIN#*.}
 
       # 获取 Zone ID 和 Account ID
-      local ZONE_RESPONSE=$(wget --no-check-certificate -qO- --content-on-error \
+      local ZONE_RESPONSE=$(wget -qO- --content-on-error \
         --header="Authorization: Bearer ${ARGO_AUTH}" \
         --header="Content-Type: application/json" \
         "https://api.cloudflare.com/client/v4/zones?name=${ROOT_DOMAIN}")
@@ -757,7 +785,7 @@ EOF
       local ACCOUNT_ID=$(sed 's/.*account":[ ]*{"id":"\([^"]*\)",.*/\1/' <<< $ZONE_RESPONSE)
 
       # 查询并处理现有 Tunnel
-      local TUNNEL_LIST=$(wget --no-check-certificate -qO- --content-on-error \
+      local TUNNEL_LIST=$(wget -qO- --content-on-error \
         --header="Authorization: Bearer ${ARGO_AUTH}" \
         --header="Content-Type: application/json" \
         "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/cfd_tunnel?is_deleted=false" \
@@ -778,7 +806,7 @@ EOF
         local TUNNEL_SECRET=$(openssl rand -base64 32)
 
         # 创建新 Tunnel
-        local CREATE_RESPONSE=$(wget --no-check-certificate -qO- --content-on-error \
+        local CREATE_RESPONSE=$(wget -qO- --content-on-error \
           --header="Authorization: Bearer ${ARGO_AUTH}" \
           --header="Content-Type: application/json" \
           --post-data="{
@@ -793,7 +821,7 @@ EOF
       fi
 
       # 配置隧道ingress规则
-      local CONFIG_RESPONSE=$(wget --no-check-certificate -qO- --content-on-error \
+      local CONFIG_RESPONSE=$(wget -qO- --content-on-error \
         --method=PUT \
         --header="Authorization: Bearer ${ARGO_AUTH}" \
         --header="Content-Type: application/json" \
@@ -826,7 +854,7 @@ EOF
         }
       }"
 
-      local DNS_LIST=$(wget --no-check-certificate -qO- --content-on-error \
+      local DNS_LIST=$(wget -qO- --content-on-error \
         --header="Authorization: Bearer ${ARGO_AUTH}" \
         --header="Content-Type: application/json" \
         "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records?type=CNAME&name=${ARGO_DOMAIN}")
@@ -837,7 +865,7 @@ EOF
 
         # DNS 记录与隧道 ID 不匹配的话，覆盖原来的 CNAME 记录
         if ! grep -qw "$EXISTING_TUNNEL_ID" <<< "${EXISTED_DNS_CONTENT%%.*}"; then
-          local DNS_RESPONSE=$(wget --no-check-certificate -qO- --content-on-error \
+          local DNS_RESPONSE=$(wget -qO- --content-on-error \
             --method=PATCH \
             --header="Authorization: Bearer ${ARGO_AUTH}" \
             --header="Content-Type: application/json" \
@@ -846,7 +874,7 @@ EOF
         fi
       else
         # 未找到现有 DNS 记录，使用 POST 创建
-        local DNS_RESPONSE=$(wget --no-check-certificate -qO- --content-on-error \
+        local DNS_RESPONSE=$(wget -qO- --content-on-error \
           --method=POST \
           --header="Authorization: Bearer ${ARGO_AUTH}" \
           --header="Content-Type: application/json" \
@@ -1081,7 +1109,7 @@ EOF
 
   # 生成 clash 订阅配置文件
   # 模板: 使用 proxy providers
-  wget -qO- --tries=3 --timeout=2 ${SUBSCRIBE_TEMPLATE}/clash | sed "s#NODE_NAME#${NODE_NAME}#g; s#PROXY_PROVIDERS_URL#https://${ARGO_DOMAIN}/${UUID}/proxies#" > ${WORK_DIR}/subscribe/clash
+  gh_file_download 'fscarmen/client_template' 'main' 'clash' /tmp/clash.tpl "${SUBSCRIBE_TEMPLATE}/clash" >/dev/null 2>&1 && sed "s#NODE_NAME#${NODE_NAME}#g; s#PROXY_PROVIDERS_URL#https://${ARGO_DOMAIN}/${UUID}/proxies#" /tmp/clash.tpl > ${WORK_DIR}/subscribe/clash
 
   # 生成 ShadowRocket 订阅配置文件
   [ "${XTLS_REALITY}" = 'true' ] && local SHADOWROCKET_SUBSCRIBE+="
@@ -1285,7 +1313,7 @@ snell://${UUID}@${SERVER_IP_1}:${PORT_SNELL}?version=6&mode=default&reuse=1#${NO
   local NODE_REPLACE+="\"${NODE_NAME} snell-v6\","
 
   # 模板
-  local SING_BOX_JSON=$(wget -qO- --tries=3 --timeout=2 ${SUBSCRIBE_TEMPLATE}/sing-box)
+  local SING_BOX_JSON=$(gh_file_download 'fscarmen/client_template' 'main' 'sing-box' /tmp/sing-box.tpl "${SUBSCRIBE_TEMPLATE}/sing-box" >/dev/null 2>&1 && cat /tmp/sing-box.tpl)
 
   echo $SING_BOX_JSON | sed "s#\"<OUTBOUND_REPLACE>\",#$OUTBOUND_REPLACE#; s#\"<NODE_REPLACE>\"#${NODE_REPLACE%,}#g" | ${WORK_DIR}/jq > ${WORK_DIR}/subscribe/sing-box
 
@@ -1399,7 +1427,7 @@ update_sing-box() {
   if [ -n "$ONLINE" ]; then
     if [[ "$ONLINE" != "$LOCAL" ]]; then
       cp -f ${WORK_DIR}/sing-box /tmp/sing-box.bak
-      wget https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz -O- | tar xz -C /tmp sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box
+      gh_release_download 'SagerNet/sing-box' "v$ONLINE" "sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz" /tmp/sing-box.tar.gz && tar xz -C /tmp -f /tmp/sing-box.tar.gz sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box && rm -f /tmp/sing-box.tar.gz
       mv /tmp/sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box ${WORK_DIR}/sing-box
       local SING_BOX_PID_OLD=$(ps aux | grep '[s]ing-box run' | awk '{print $1}')
       kill -9 ${SING_BOX_PID_OLD}

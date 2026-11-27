@@ -4,7 +4,6 @@
 VERSION='v1.3.31 (2026.11.23)'
 
 # Github 反代加速代理
-GITHUB_PROXY=('https://ghproxy.lvedong.eu.org/' 'https://accel.cloudflare.nyc.mn/')
 
 # 各变量默认值
 TEMP_DIR='/tmp/sing-box'
@@ -540,72 +539,37 @@ calc_install_steps() {
   TOTAL_STEPS=$STEP_TOTAL
 }
 
-# 检测是否需要启用 Github CDN，raw 与 releases 两个下载域都直连可达才不使用
+# 自有化口径（数据安全）：默认直连官方源，不再自动探测或启用第三方 GitHub 反代。
+# 仅当用户显式设置环境变量 GH_PROXY 时才经其指定的地址下载；且所有下载仍须过下方官方 API 校验，代理不影响完整性判定。
 check_cdn() {
-  local PROXY CODE PID CMD _url P1 P2 CODE_RAW CODE_REL
-  local PIDS=()
-  # 探测点1：raw 域（脚本及订阅模板文件下载路径）
-  local RAW_URL='https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-box.sh'
-  # 探测点2：github releases 域（sing-box / jq / cloudflared 等二进制真实下载路径，
-  # latest 指向永远有效）。修复 IPv6-only / 部分封锁场景：raw 域可达 ≠ releases 域可达，任一域失败都必须走代理
-  local REL_URL='https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64'
+  GH_PROXY=${GH_PROXY:-}
+  [ -n "$GH_PROXY" ] && hint "\n Using user-specified GitHub proxy: $GH_PROXY (integrity still verified via the official GitHub API) \n"
+  return 0
+}
 
-  # 确定下载工具：优先 wget，次选 curl
-  if command -v wget >/dev/null 2>&1; then
-    CMD='wget'
-  elif command -v curl >/dev/null 2>&1; then
-    CMD='curl'
-  else
-    GH_PROXY=''
-    return
-  fi
+# === 下载完整性校验（自有化加固） ===
+# 经 GitHub 官方 API 获取 Release 资产的 sha256 digest，下载后校验；不过即删档并失败返回。
+# $1=owner/repo $2=tag 或 latest $3=资产名 $4=输出文件
+gh_release_download() {
+  local REPO=$1 TAG=$2 ASSET=$3 OUT=$4 API_URL DIGEST DL_URL AUTH=()
+  [ -n "$GITHUB_TOKEN" ] && AUTH=(--header="Authorization: Bearer $GITHUB_TOKEN")
+  if [ "$TAG" = 'latest' ]; then API_URL="https://api.github.com/repos/${REPO}/releases/latest"; DL_URL="https://github.com/${REPO}/releases/latest/download/${ASSET}"; else API_URL="https://api.github.com/repos/${REPO}/releases/tags/${TAG}"; DL_URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"; fi
+  DIGEST=$(wget -qO- --tries=2 --timeout=10 "${AUTH[@]}" "$API_URL" 2>/dev/null | awk -v n="\"name\": \"$ASSET\"" 'index($0,n){f=1} f && /"digest":/ {gsub(/[" ,]/,"",$0); sub(/^digest:sha256:/,"",$0); print; exit}')
+  [ -n "$DIGEST" ] || { warning "\n 无法从 GitHub 官方 API 获取 ${ASSET} 的 sha256 校验值，下载已中止。处理办法: 稍后重试，或设置 GITHUB_TOKEN 环境变量提高 API 额度后重试。 / Cannot obtain the sha256 digest of ${ASSET} from the official GitHub API; download aborted. Remedy: retry later, or set GITHUB_TOKEN to raise the API rate limit. \n"; return 1; }
+  wget -qO "$OUT" --tries=2 --timeout=20 "${GH_PROXY}${DL_URL}" 2>/dev/null || { rm -f "$OUT"; warning "\n 下载 ${ASSET} 失败。 / Failed to download ${ASSET}. \n"; return 1; }
+  echo "${DIGEST}  ${OUT}" | sha256sum -c - >/dev/null 2>&1 || { rm -f "$OUT"; warning "\n ${ASSET} 的 sha256 校验不通过，文件已删除，安装中止。 / sha256 verification failed for ${ASSET}; the file was deleted and installation aborted. \n"; return 1; }
+}
 
-  # 获取 HTTP 状态码（HEAD 探测：只取响应头，不下载 body；--tries=1 避免被墙时 wget 默认 20 次重试放大延迟）
-  get_code() {
-    local url=$1
-    if [ "$CMD" = 'wget' ]; then
-      wget -q --spider --tries=1 -T5 -O /dev/null --server-response "$url" 2>&1 | awk '/HTTP\//{code=$2} END{print code}'
-    else
-      curl -skL -I --connect-timeout 3 --max-time 5 -o /dev/null -w '%{http_code}' "$url"
-    fi
-  }
-
-  # 直连检测：raw 与 releases 两个下载域并行 HEAD 探测，必须全部可达才可直连
-  get_code "$RAW_URL" > "${TEMP_DIR}/cdn_raw" &
-  P1=$!
-  get_code "$REL_URL" > "${TEMP_DIR}/cdn_rel" &
-  P2=$!
-  wait "$P1" "$P2" 2>/dev/null
-  CODE_RAW=$(cat "${TEMP_DIR}/cdn_raw" 2>/dev/null)
-  CODE_REL=$(cat "${TEMP_DIR}/cdn_rel" 2>/dev/null)
-  rm -f "${TEMP_DIR}/cdn_raw" "${TEMP_DIR}/cdn_rel"
-  if [ "$CODE_RAW" = '200' ] && [ "$CODE_REL" = '200' ]; then
-    GH_PROXY=''
-    return
-  fi
-
-  # 直连失败 → 并发探测代理镜像（对两个下载域都要求可达，与直连判定标准一致）
-  for PROXY in "${GITHUB_PROXY[@]}"; do
-    {
-      # 两个下载域都经代理可达才认定该镜像可用（Bash 异步子壳中不能用 return，用短路逻辑）
-      for _url in "$RAW_URL" "$REL_URL"; do
-        CODE=$(get_code "${PROXY}${_url}")
-        [ "$CODE" = '200' ] || { CODE=; break; }
-      done
-      [ "$CODE" = '200' ] && [ ! -e "${TEMP_DIR}/cdn_proxy" ] && printf '%s' "$PROXY" > "${TEMP_DIR}/cdn_proxy"
-    } &
-    PIDS+=("$!")
-  done
-
-  # wait -n 等首个返回 200 的代理（Bash 4.3+），老版本兜底 sleep 1，避免无限等待卡死
-  [ "${#PIDS[@]}" -gt 0 ] && { wait -n 2>/dev/null || sleep 1; }
-
-  [ -e "${TEMP_DIR}/cdn_proxy" ] && GH_PROXY=$(cat "${TEMP_DIR}/cdn_proxy") || GH_PROXY=''
-
-  # 清理后台任务和临时文件
-  for PID in "${PIDS[@]}"; do kill "$PID" >/dev/null 2>&1 || true; done
-  for PID in "${PIDS[@]}"; do wait "$PID" 2>/dev/null || true; done
-  rm -f "${TEMP_DIR}/cdn_proxy"
+# 经 GitHub 官方 API（git trees）获取仓库文件的 blob sha，下载后按 git blob 规则校验；不过即删档并失败返回。
+# $1=owner/repo $2=分支 $3=仓库内路径 $4=输出文件 $5=原始下载地址（不含代理前缀）
+gh_file_download() {
+  local REPO=$1 REF=$2 RPATH=$3 OUT=$4 RAW=$5 SHA CALC AUTH=()
+  [ -n "$GITHUB_TOKEN" ] && AUTH=(--header="Authorization: Bearer $GITHUB_TOKEN")
+  SHA=$(wget -qO- --tries=2 --timeout=10 "${AUTH[@]}" "https://api.github.com/repos/${REPO}/git/trees/${REF}?recursive=1" 2>/dev/null | awk -v p="\"path\": \"$RPATH\"" 'index($0,p){f=1} f && /"sha":/ {gsub(/[" ,]/,"",$0); sub(/^sha:/,"",$0); print; exit}')
+  [ -n "$SHA" ] || { warning "\n 无法从 GitHub 官方 API 获取 ${RPATH} 的校验值，下载已中止。处理办法: 稍后重试，或设置 GITHUB_TOKEN 环境变量提高 API 额度后重试。 / Cannot obtain the checksum of ${RPATH} from the official GitHub API; download aborted. \n"; return 1; }
+  wget -qO "$OUT" --tries=2 --timeout=20 "${GH_PROXY}${RAW}" 2>/dev/null || { rm -f "$OUT"; warning "\n 下载 ${RPATH} 失败。 / Failed to download ${RPATH}. \n"; return 1; }
+  CALC=$( { printf 'blob %s\0' "$(wc -c < "$OUT")"; cat "$OUT"; } | sha1sum | awk '{print $1}' )
+  [ "$CALC" = "$SHA" ] || { rm -f "$OUT"; warning "\n ${RPATH} 的校验不通过，文件已删除，安装中止。 / Checksum verification failed for ${RPATH}; the file was deleted and installation aborted. \n"; return 1; }
 }
 
 # 检测是否解锁 chatGPT，以决定是否使用 warp 链式代理或者是 direct out，此处判断改编自 https://github.com/lmc999/RegionRestrictionCheck
@@ -618,7 +582,7 @@ check_chatgpt() {
   # 首先检查API访问
   local CHECK_RESULT1=$(wget --timeout=2 --tries=2 --retry-connrefused --waitretry=5 ${CHECK_STACK} -qO- --content-on-error --header='authority: api.openai.com' --header='accept: */*' --header='accept-language: en-US,en;q=0.9' --header='authorization: Bearer null' --header='content-type: application/json' --header='origin: https://platform.openai.com' --header='referer: https://platform.openai.com/' --header="sec-ch-ua: ${UA_SEC_CH_UA}" --header='sec-ch-ua-mobile: ?0' --header='sec-ch-ua-platform: "Windows"' --header='sec-fetch-dest: empty' --header='sec-fetch-mode: cors' --header='sec-fetch-site: same-site' --user-agent="${UA_BROWSER}" 'https://api.openai.com/compliance/cookie_requirements')
 
-  [ -z "$CHECK_RESULT1" ] && grep -qw is_ciphers <<< "$IS_CIPHERS" && local CHECK_RESULT1=$(wget --timeout=2 --tries=2 --retry-connrefused --waitretry=5 ${CHECK_STACK} --ciphers=DEFAULT@SECLEVEL=1 --no-check-certificate -qO- --content-on-error --header='authority: api.openai.com' --header='accept: */*' --header='accept-language: en-US,en;q=0.9' --header='authorization: Bearer null' --header='content-type: application/json' --header='origin: https://platform.openai.com' --header='referer: https://platform.openai.com/' --header="sec-ch-ua: ${UA_SEC_CH_UA}" --header='sec-ch-ua-mobile: ?0' --header='sec-ch-ua-platform: "Windows"' --header='sec-fetch-dest: empty' --header='sec-fetch-mode: cors' --header='sec-fetch-site: same-site' --user-agent="${UA_BROWSER}" 'https://api.openai.com/compliance/cookie_requirements')
+  [ -z "$CHECK_RESULT1" ] && grep -qw is_ciphers <<< "$IS_CIPHERS" && local CHECK_RESULT1=$(wget --timeout=2 --tries=2 --retry-connrefused --waitretry=5 ${CHECK_STACK} --ciphers=DEFAULT@SECLEVEL=1 -qO- --content-on-error --header='authority: api.openai.com' --header='accept: */*' --header='accept-language: en-US,en;q=0.9' --header='authorization: Bearer null' --header='content-type: application/json' --header='origin: https://platform.openai.com' --header='referer: https://platform.openai.com/' --header="sec-ch-ua: ${UA_SEC_CH_UA}" --header='sec-ch-ua-mobile: ?0' --header='sec-ch-ua-platform: "Windows"' --header='sec-fetch-dest: empty' --header='sec-fetch-mode: cors' --header='sec-fetch-site: same-site' --user-agent="${UA_BROWSER}" 'https://api.openai.com/compliance/cookie_requirements')
 
   # 如果API检测失败或者检测到unsupported_country,直接返回ban
   if [ -z "$CHECK_RESULT1" ] || grep -qi 'unsupported_country' <<< "$CHECK_RESULT1"; then
@@ -629,7 +593,7 @@ check_chatgpt() {
   # API检测通过后,继续检查网页访问
   local CHECK_RESULT2=$(wget --timeout=2 --tries=2 --retry-connrefused --waitretry=5 ${CHECK_STACK} -qO- --content-on-error --header='authority: ios.chat.openai.com' --header='accept: */*;q=0.8,application/signed-exchange;v=b3;q=0.7' --header='accept-language: en-US,en;q=0.9' --header="sec-ch-ua: ${UA_SEC_CH_UA}" --header='sec-ch-ua-mobile: ?0' --header='sec-ch-ua-platform: "Windows"' --header='sec-fetch-dest: document' --header='sec-fetch-mode: navigate' --header='sec-fetch-site: none' --header='sec-fetch-user: ?1' --header='upgrade-insecure-requests: 1' --user-agent="${UA_BROWSER}" https://ios.chat.openai.com/)
 
-  [ -z "$CHECK_RESULT2" ] && grep -qw is_ciphers <<< "$IS_CIPHERS" && local CHECK_RESULT2=$(wget --timeout=2 --tries=2 --retry-connrefused --waitretry=5 ${CHECK_STACK} --ciphers=DEFAULT@SECLEVEL=1 --no-check-certificate -qO- --content-on-error --header='authority: ios.chat.openai.com' --header='accept: */*;q=0.8,application/signed-exchange;v=b3;q=0.7' --header='accept-language: en-US,en;q=0.9' --header="sec-ch-ua: ${UA_SEC_CH_UA}" --header='sec-ch-ua-mobile: ?0' --header='sec-ch-ua-platform: "Windows"' --header='sec-fetch-dest: document' --header='sec-fetch-mode: navigate' --header='sec-fetch-site: none' --header='sec-fetch-user: ?1' --header='upgrade-insecure-requests: 1' --user-agent="${UA_BROWSER}" https://ios.chat.openai.com/)
+  [ -z "$CHECK_RESULT2" ] && grep -qw is_ciphers <<< "$IS_CIPHERS" && local CHECK_RESULT2=$(wget --timeout=2 --tries=2 --retry-connrefused --waitretry=5 ${CHECK_STACK} --ciphers=DEFAULT@SECLEVEL=1 -qO- --content-on-error --header='authority: ios.chat.openai.com' --header='accept: */*;q=0.8,application/signed-exchange;v=b3;q=0.7' --header='accept-language: en-US,en;q=0.9' --header="sec-ch-ua: ${UA_SEC_CH_UA}" --header='sec-ch-ua-mobile: ?0' --header='sec-ch-ua-platform: "Windows"' --header='sec-fetch-dest: document' --header='sec-fetch-mode: navigate' --header='sec-fetch-site: none' --header='sec-fetch-user: ?1' --header='upgrade-insecure-requests: 1' --user-agent="${UA_BROWSER}" https://ios.chat.openai.com/)
 
   # 检查第二个结果
   if [ -z "$CHECK_RESULT2" ] || grep -qi 'VPN' <<< "$CHECK_RESULT2"; then
@@ -1211,8 +1175,8 @@ change_config() {
       fi
       check_arch
       [ ! -e "${WORK_DIR}/qrencode" ] && \
-        wget --no-check-certificate --continue --tries=2 --timeout=10 -qO ${WORK_DIR}/qrencode \
-          ${GH_PROXY}https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH 2>/dev/null \
+        gh_file_download 'fscarmen/client_template' 'main' "qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" ${WORK_DIR}/qrencode \
+          "https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" 2>/dev/null \
           && chmod +x ${WORK_DIR}/qrencode
       fetch_nodes_value
       [ -z "$PORT_NGINX" ] && input_nginx_port
@@ -1335,7 +1299,7 @@ create_argo_tunnel() {
   }
 
   # 步骤 1: 获取 Zone ID 和 Account ID
-  local ZONE_RESPONSE=$(wget --no-check-certificate -qO- --content-on-error \
+  local ZONE_RESPONSE=$(wget -qO- --content-on-error \
     --header="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
     --header="Content-Type: application/json" \
     "https://api.cloudflare.com/client/v4/zones?name=${ROOT_DOMAIN}")
@@ -1346,7 +1310,7 @@ create_argo_tunnel() {
   return 5
 
   # 步骤 2: 查询并处理现有 Tunnel
-  local TUNNEL_LIST=$(wget --no-check-certificate -qO- --content-on-error \
+  local TUNNEL_LIST=$(wget -qO- --content-on-error \
     --header="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
     --header="Content-Type: application/json" \
     "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/cfd_tunnel?is_deleted=false")
@@ -1392,7 +1356,7 @@ create_argo_tunnel() {
     local TUNNEL_SECRET=$(openssl rand -base64 32)
 
     # 创建新 Tunnel
-    local CREATE_RESPONSE=$(wget --no-check-certificate -qO- --content-on-error \
+    local CREATE_RESPONSE=$(wget -qO- --content-on-error \
       --header="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
       --header="Content-Type: application/json" \
       --post-data="{
@@ -1423,7 +1387,7 @@ create_argo_tunnel() {
   fi
 
   # 步骤 3: 配置 Tunnel ingress 规则... 不管原来的规则，一率覆盖处理
- local CONFIG_RESPONSE=$(wget --no-check-certificate -qO- --content-on-error \
+ local CONFIG_RESPONSE=$(wget -qO- --content-on-error \
   --method=PUT \
   --header="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
   --header="Content-Type: application/json" \
@@ -1458,7 +1422,7 @@ create_argo_tunnel() {
     }
   }"
 
-  local DNS_LIST=$(wget --no-check-certificate -qO- --content-on-error \
+  local DNS_LIST=$(wget -qO- --content-on-error \
     --header="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
     --header="Content-Type: application/json" \
     "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records?type=CNAME&name=${ARGO_DOMAIN}")
@@ -1471,7 +1435,7 @@ create_argo_tunnel() {
 
     # DNS 记录与隧道 ID 不匹配的话，覆盖原来的 CNAME 记录
     if ! grep -qw "$EXISTING_TUNNEL_ID" <<< "${EXISTED_DNS_CONTENT%%.*}"; then
-      local DNS_RESPONSE=$(wget --no-check-certificate -qO- --content-on-error \
+      local DNS_RESPONSE=$(wget -qO- --content-on-error \
         --method=PATCH \
         --header="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
         --header="Content-Type: application/json" \
@@ -1482,7 +1446,7 @@ create_argo_tunnel() {
     fi
   else
     # 未找到现有 DNS 记录，使用 POST 创建
-    local DNS_RESPONSE=$(wget --no-check-certificate -qO- --content-on-error \
+    local DNS_RESPONSE=$(wget -qO- --content-on-error \
       --method=POST \
       --header="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
       --header="Content-Type: application/json" \
@@ -2498,23 +2462,21 @@ check_install() {
       local ONLINE=$(get_sing_box_version)
       local SB_DIR="$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH"
       local SB_BIN="$SB_DIR/sing-box"
-      wget --no-check-certificate --continue --tries=2 --timeout=10 \
-        ${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz \
-        -qO- | tar xz -C $TEMP_DIR 2>/dev/null
+      gh_release_download 'SagerNet/sing-box' "v$ONLINE" "sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz" "$TEMP_DIR/sing-box.tar.gz" \
+        && tar xz -C $TEMP_DIR -f "$TEMP_DIR/sing-box.tar.gz" 2>/dev/null; rm -f "$TEMP_DIR/sing-box.tar.gz"
       [ -s "$SB_BIN" ] && [ -x "$SB_BIN" ] && mv "$SB_BIN" "$TEMP_DIR/sing-box" && chmod +x "$TEMP_DIR/sing-box"
     } &
 
     # 任务 2: 下载 jq
     {
-      wget --no-check-certificate --continue --tries=2 --timeout=10 -qO $TEMP_DIR/jq \
-        ${GH_PROXY}https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH 2>/dev/null \
+      gh_release_download 'jqlang/jq' 'jq-1.8.1' "jq-linux-$JQ_ARCH" $TEMP_DIR/jq \
         && chmod +x $TEMP_DIR/jq
     } &
 
     # 任务 3: 下载 qrencode
     {
-      wget --no-check-certificate --continue --tries=2 --timeout=10 -qO $TEMP_DIR/qrencode \
-        ${GH_PROXY}https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH 2>/dev/null \
+      gh_file_download 'fscarmen/client_template' 'main' "qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" $TEMP_DIR/qrencode \
+        "https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" \
         && chmod +x $TEMP_DIR/qrencode
     } &
 
@@ -2541,7 +2503,7 @@ check_install() {
   # 如果有需要，后台静默下载 cloudflared（卸载模式跳过）
   if [[ "${STATUS[1]}" = "$(text 26)" || "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]] && [ ! -s ${WORK_DIR}/cloudflared ] && [ "$IS_UNINSTALL" != 'is_uninstall' ]; then
     {
-      wget --no-check-certificate --tries=2 --timeout=10 -qO $TEMP_DIR/cloudflared ${GH_PROXY}https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH >/dev/null 2>&1 && chmod +x $TEMP_DIR/cloudflared >/dev/null 2>&1
+      gh_release_download 'cloudflare/cloudflared' 'latest' "cloudflared-linux-$ARGO_ARCH" $TEMP_DIR/cloudflared >/dev/null 2>&1 && chmod +x $TEMP_DIR/cloudflared >/dev/null 2>&1
     }&
   elif [ "${STATUS[1]}" != "$(text 26)" ]; then
     # 查 Argo 进程号，运行时长和内存占用
@@ -2728,15 +2690,16 @@ check_system_info() {
 get_sing_box_version() {
   local FORCE_VERSION RESULT_VERSION
   # FORCE_VERSION 用于在 sing-box 某个主程序出现 bug 时，强制为指定版本，以防止运行出错
-  FORCE_VERSION=$(wget --no-check-certificate --tries=2 --timeout=3 -qO- "${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sing-box/refs/heads/main/force_version" 2>&1 | sed 's/^[vV]//g; s/\r//g')
+  gh_file_download 'fscarmen/sing-box' 'main' 'force_version' "$TEMP_DIR/force_version" 'https://raw.githubusercontent.com/fscarmen/sing-box/main/force_version' >/dev/null 2>&1
+  FORCE_VERSION=$(sed 's/^[vV]//g; s/\r//g' "$TEMP_DIR/force_version" 2>/dev/null)
   if grep -q '.' <<< "$FORCE_VERSION"; then
     RESULT_VERSION="$FORCE_VERSION"
   else
     # 取最新版本（含 alpha / beta / rc 等预发布版）：releases.atom → 失败则 GitHub API → 仍失败则 DEFAULT_NEWEST_VERSION
-    RESULT_VERSION=$(wget --no-check-certificate --tries=2 --timeout=3 -qO- "${GH_PROXY}https://github.com/SagerNet/sing-box/releases.atom" 2>&1 | sed -n '/alternate/ s#.*/tag/v\([^"]\+\)".*#\1#gp' | sort -Vr | sed -n '1p')
+    RESULT_VERSION=$(wget --tries=2 --timeout=3 -qO- "${GH_PROXY}https://github.com/SagerNet/sing-box/releases.atom" 2>&1 | sed -n '/alternate/ s#.*/tag/v\([^"]\+\)".*#\1#gp' | sort -Vr | sed -n '1p')
 
     if grep -q '^$' <<< "$RESULT_VERSION"; then
-      RESULT_VERSION=$(wget --no-check-certificate --tries=2 --timeout=3 -qO- "${GH_PROXY}https://api.github.com/repos/SagerNet/sing-box/releases" 2>&1 | awk -F '["v]' '/"tag_name"/ {print $5}' | sort -Vr | sed -n '1p')
+      RESULT_VERSION=$(wget --tries=2 --timeout=3 -qO- "${GH_PROXY}https://api.github.com/repos/SagerNet/sing-box/releases" 2>&1 | awk -F '["v]' '/"tag_name"/ {print $5}' | sort -Vr | sed -n '1p')
       grep -q '^$' <<< "$RESULT_VERSION" && RESULT_VERSION="$DEFAULT_NEWEST_VERSION"
     fi
   fi
@@ -2909,7 +2872,7 @@ check_system_ip() {
     {
       local NODE RESULT4
       for NODE in "${IP_API_NODES[@]}"; do
-        RESULT4=$(wget $BIND_ADDRESS4 -4 -qO- --no-check-certificate --tries=1 --timeout=2 ${NODE}${IS_CHINESE})
+        RESULT4=$(wget $BIND_ADDRESS4 -4 -qO- --tries=1 --timeout=2 ${NODE}${IS_CHINESE})
         grep -q '"ip"' <<< "$RESULT4" && {
           echo "$RESULT4" > $TEMP_DIR/ip4.json
           break
@@ -2925,7 +2888,7 @@ check_system_ip() {
     {
       local NODE RESULT6
       for NODE in "${IP_API_NODES[@]}"; do
-        RESULT6=$(wget $BIND_ADDRESS6 -6 -qO- --no-check-certificate --tries=1 --timeout=2 ${NODE}${IS_CHINESE})
+        RESULT6=$(wget $BIND_ADDRESS6 -6 -qO- --tries=1 --timeout=2 ${NODE}${IS_CHINESE})
         grep -q '"ip"' <<< "$RESULT6" && {
           echo "$RESULT6" > $TEMP_DIR/ip6.json
           break
@@ -6176,7 +6139,7 @@ ensure_subscription_templates() {
     fi
     TPL_PART="${TPL_FILE}.part"
     rm -f "$TPL_PART"
-    if wget --no-check-certificate --continue --tries=2 --timeout=10 -qO "$TPL_PART" "${GH_PROXY}${SUBSCRIBE_TEMPLATE}/${TPL_URL}" 2>/dev/null && [ -s "$TPL_PART" ]; then
+    if gh_file_download 'fscarmen/client_template' 'main' "$TPL_URL" "$TPL_PART" "${SUBSCRIBE_TEMPLATE}/${TPL_URL}" 2>/dev/null && [ -s "$TPL_PART" ]; then
       mv -f "$TPL_PART" "$TPL_FILE"
     else
       rm -f "$TPL_PART"
@@ -6216,7 +6179,7 @@ export_list() {
       if [ -s "${TEMP_DIR}/${TPL_NAME}" ]; then
         cp "${TEMP_DIR}/${TPL_NAME}" "${SUB_TPL_SRC}/${TPL_NAME}"
       else
-        wget --no-check-certificate --continue --tries=2 --timeout=10 -qO "${SUB_TPL_SRC}/${TPL_NAME}" "${GH_PROXY}${SUBSCRIBE_TEMPLATE}/$( [ "$TPL_NAME" = 'sing-box-template' ] && echo sing-box || echo $TPL_NAME )" 2>/dev/null
+        gh_file_download 'fscarmen/client_template' 'main' "$( [ "$TPL_NAME" = 'sing-box-template' ] && echo sing-box || echo $TPL_NAME )" "${SUB_TPL_SRC}/${TPL_NAME}" "${SUBSCRIBE_TEMPLATE}/$( [ "$TPL_NAME" = 'sing-box-template' ] && echo sing-box || echo $TPL_NAME )" 2>/dev/null
       fi
     done
   else
@@ -6813,7 +6776,7 @@ snell://${UUID[23]}@${SERVER_IP_1}:${PORT_SNELL}?version=6&mode=default&reuse=1#
 
   {
     # 生成 sing-box SFM SFA SFI 订阅文件
-    [ ! -s "${SUB_TPL_SRC}/sing-box-template" ] && wget --no-check-certificate --continue --tries=2 --timeout=10 -qO "${SUB_TPL_SRC}/sing-box-template" "${GH_PROXY}${SUBSCRIBE_TEMPLATE}/sing-box" 2>/dev/null
+    [ ! -s "${SUB_TPL_SRC}/sing-box-template" ] && gh_file_download 'fscarmen/client_template' 'main' 'sing-box' "${SUB_TPL_SRC}/sing-box-template" "${SUBSCRIBE_TEMPLATE}/sing-box" 2>/dev/null
     cat ${SUB_TPL_SRC}/sing-box-template | sed "s#\"<OUTBOUND_REPLACE>\",#$OUTBOUND_REPLACE#; s#\"<NODE_REPLACE>\"#${NODE_REPLACE%,}#g" | ${WORK_DIR}/jq > ${SUB_OUT_DIR}/sing-box
   } >/dev/null
 
@@ -7007,7 +6970,7 @@ create_shortcut() {
   cat > ${WORK_DIR}/sb.sh << EOF
 #!/usr/bin/env bash
 
-bash <(wget --no-check-certificate -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-box.sh) \$@
+bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-box.sh) \$@
 EOF
   chmod +x ${WORK_DIR}/sb.sh
   ln -sf ${WORK_DIR}/sb.sh /usr/bin/sb
@@ -7493,7 +7456,7 @@ version() {
   # Argo (cloudflared) 版本检测：仅在已部署 Argo（守护进程文件存在）时进行
   local ARGO_ONLINE ARGO_LOCAL
   if [ -s ${ARGO_DAEMON_FILE} ]; then
-    ARGO_ONLINE=$(wget --no-check-certificate --tries=2 --timeout=10 -qO- "${GH_PROXY}https://api.github.com/repos/cloudflare/cloudflared/releases/latest" | grep "tag_name" | cut -d \" -f4)
+    ARGO_ONLINE=$(wget --tries=2 --timeout=10 -qO- "${GH_PROXY}https://api.github.com/repos/cloudflare/cloudflared/releases/latest" | grep "tag_name" | cut -d \" -f4)
     grep -q '.' <<< "$ARGO_ONLINE" || error " $(text 100) \n"
     ARGO_LOCAL=$(${WORK_DIR}/cloudflared -v | awk '{for (i=1; i<NF; i++) if ($i=="version") {print $(i+1); exit}}')
     local APP=Argo LOCAL="$ARGO_LOCAL" ONLINE="$ARGO_ONLINE"
@@ -7512,7 +7475,7 @@ version() {
 
   # 升级 Argo (cloudflared)
   if [ "${UPDATE[0],,}" = 'y' ]; then
-    wget --no-check-certificate --continue --tries=2 --timeout=10 -qO $TEMP_DIR/cloudflared ${GH_PROXY}https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH 2>/dev/null
+    gh_release_download 'cloudflare/cloudflared' 'latest' "cloudflared-linux-$ARGO_ARCH" $TEMP_DIR/cloudflared 2>/dev/null
     if [ -s $TEMP_DIR/cloudflared ]; then
       cmd_systemctl disable argo
       chmod +x $TEMP_DIR/cloudflared && mv $TEMP_DIR/cloudflared ${WORK_DIR}/cloudflared
@@ -7527,12 +7490,10 @@ version() {
   if [ "${UPDATE[1],,}" = 'y' ]; then
     # 先下载到临时文件并校验完整性，避免中断导致损坏的压缩包直接喂给 tar 报错；失败自动重试（第2次起去掉代理直连）
     # 直接使用文件路径，仅保留 URL 切换变量、循环计数变量
-    local SB_UP_URL UP_TRY
+    local UP_TRY
     for UP_TRY in 1 2 3; do
       rm -f "$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz" "$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH"
-      SB_UP_URL="${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz"
-      [ "$UP_TRY" -ge 2 ] && SB_UP_URL="https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz"
-      wget --no-check-certificate --continue --tries=2 --timeout=10 -qO "$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz" "$SB_UP_URL" 2>/dev/null || { sleep 3; continue; }
+      gh_release_download 'SagerNet/sing-box' "v$ONLINE" "sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz" "$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz" 2>/dev/null || { sleep 3; continue; }
       [ -s "$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz" ] || { sleep 3; continue; }
       tar xz -C "$TEMP_DIR" -f "$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz" "sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box" 2>/dev/null || { sleep 3; continue; }
       [ -s "$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box" ] || { sleep 3; continue; }
@@ -7643,12 +7604,12 @@ menu_setting() {
     ACTION[4]() { change_argo; exit; }
     ACTION[5]() { change_config; exit; }
     ACTION[6]() { version; exit; }
-    ACTION[7]() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh); exit; }
+    ACTION[7]() { bash <(wget -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh); exit; }
     ACTION[8]() { change_protocols; exit; }
     ACTION[9]() { uninstall; exit; }
-    ACTION[10]() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/argox/main/argox.sh) -$L; exit; }
-    ACTION[11]() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sba/main/sba.sh) -$L; exit; }
-    ACTION[12]() { bash <(wget --no-check-certificate -qO- https://tcp.hy2.sh/); exit; }
+    ACTION[10]() { bash <(wget -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/argox/main/argox.sh) -$L; exit; }
+    ACTION[11]() { bash <(wget -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sba/main/sba.sh) -$L; exit; }
+    ACTION[12]() { bash <(wget -qO- https://tcp.hy2.sh/); exit; }
   else
     OPTION[1]="1.  $(text 115)"
     OPTION[2]="2.  $(text 34) + Argo + $(text 80) $(text 89)"
@@ -7665,10 +7626,10 @@ menu_setting() {
     ACTION[3]() { IS_SUB=no_sub; IS_ARGO=is_argo; install_sing-box; export_list install; create_shortcut; exit; }
     ACTION[4]() { IS_SUB=is_sub; IS_ARGO=no_argo; install_sing-box; export_list install; create_shortcut; exit; }
     ACTION[5]() { install_sing-box; export_list install; create_shortcut; exit; }
-    ACTION[6]() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh); exit; }
-    ACTION[7]() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/argox/main/argox.sh) -$L; exit; }
-    ACTION[8]() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sba/main/sba.sh) -$L; exit; }
-    ACTION[9]() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://tcp.hy2.sh/); exit; }
+    ACTION[6]() { bash <(wget -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh); exit; }
+    ACTION[7]() { bash <(wget -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/argox/main/argox.sh) -$L; exit; }
+    ACTION[8]() { bash <(wget -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sba/main/sba.sh) -$L; exit; }
+    ACTION[9]() { bash <(wget -qO- ${GH_PROXY}https://tcp.hy2.sh/); exit; }
   fi
 
   [ "${#OPTION[@]}" -ge '10' ] && OPTION[0]="0 .  $(text 35)" || OPTION[0]="0.  $(text 35)"
@@ -7906,7 +7867,7 @@ for z in ${!ALL_PARAMETER[@]}; do
       check_system_info; check_arch; version; exit 0
       ;;
     -B )
-      bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh); exit
+      bash <(wget -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh); exit
       ;;
     -R )
       change_protocols; exit 0
