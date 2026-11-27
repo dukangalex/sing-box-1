@@ -67,10 +67,10 @@ E[3]="Input errors up to 5 times.The script is aborted."
 C[3]="输入错误达5次,脚本退出"
 E[4]="UUID should be 36 characters, please re-enter (\${UUID_ERROR_TIME} times remaining):"
 C[4]="UUID 应为36位字符,请重新输入 (剩余\${UUID_ERROR_TIME}次):"
-E[5]="The script supports Debian, Ubuntu, CentOS, Alpine, Armbian, Fedora or Arch systems only. Feedback: [https://github.com/fscarmen/sing-box/issues]"
-C[5]="本脚本只支持 Debian、Ubuntu、CentOS、Alpine、Armbian、Fedora 或 Arch 系统,问题反馈:[https://github.com/fscarmen/sing-box/issues]"
-E[6]="Curren operating system is \$SYS.\\\n The system lower than \$SYSTEM \${MAJOR[int]} is not supported. Feedback: [https://github.com/fscarmen/sing-box/issues]"
-C[6]="当前操作是 \$SYS\\\n 不支持 \$SYSTEM \${MAJOR[int]} 以下系统,问题反馈:[https://github.com/fscarmen/sing-box/issues]"
+E[5]="The script supports Debian, Ubuntu, CentOS, Alpine, Armbian, Fedora or Arch systems only. Feedback: [https://github.com/dukangalex/sing-box-1/issues]"
+C[5]="本脚本只支持 Debian、Ubuntu、CentOS、Alpine、Armbian、Fedora 或 Arch 系统,问题反馈:[https://github.com/dukangalex/sing-box-1/issues]"
+E[6]="Curren operating system is \$SYS.\\\n The system lower than \$SYSTEM \${MAJOR[int]} is not supported. Feedback: [https://github.com/dukangalex/sing-box-1/issues]"
+C[6]="当前操作是 \$SYS\\\n 不支持 \$SYSTEM \${MAJOR[int]} 以下系统,问题反馈:[https://github.com/dukangalex/sing-box-1/issues]"
 E[7]="Install dependence-list:"
 C[7]="安装依赖列表:"
 E[8]="All dependencies already exist and do not need to be installed additionally."
@@ -107,8 +107,8 @@ E[23]="Virtualization"
 C[23]="虚拟化"
 E[24]="Choose:"
 C[24]="请选择:"
-E[25]="Curren architecture \$(uname -m) is not supported. Feedback: [https://github.com/fscarmen/sing-box/issues]"
-C[25]="当前架构 \$(uname -m) 暂不支持,问题反馈:[https://github.com/fscarmen/sing-box/issues]"
+E[25]="Curren architecture \$(uname -m) is not supported. Feedback: [https://github.com/dukangalex/sing-box-1/issues]"
+C[25]="当前架构 \$(uname -m) 暂不支持,问题反馈:[https://github.com/dukangalex/sing-box-1/issues]"
 E[26]="Not install"
 C[26]="未安装"
 E[27]="close"
@@ -141,18 +141,18 @@ E[40]="\${APP} local version: \${LOCAL}.\\\t The newest version: \${ONLINE}"
 C[40]="\${APP} 本地版本: \${LOCAL}.\\\t 最新版本: \${ONLINE}"
 E[41]="No upgrade required."
 C[41]="不需要升级"
-E[42]="Downloading the latest version Sing-box failed, script exits. Feedback:[https://github.com/fscarmen/sing-box/issues]"
-C[42]="下载最新版本 Sing-box 失败，脚本退出，问题反馈:[https://github.com/fscarmen/sing-box/issues]"
-E[43]="The script must be run as root, you can enter sudo -i and then download and run again. Feedback:[https://github.com/fscarmen/sing-box/issues]"
-C[43]="必须以root方式运行脚本，可以输入 sudo -i 后重新下载运行，问题反馈:[https://github.com/fscarmen/sing-box/issues]"
+E[42]="Downloading the latest version Sing-box failed, script exits. Feedback:[https://github.com/dukangalex/sing-box-1/issues]"
+C[42]="下载最新版本 Sing-box 失败，脚本退出，问题反馈:[https://github.com/dukangalex/sing-box-1/issues]"
+E[43]="The script must be run as root, you can enter sudo -i and then download and run again. Feedback:[https://github.com/dukangalex/sing-box-1/issues]"
+C[43]="必须以root方式运行脚本，可以输入 sudo -i 后重新下载运行，问题反馈:[https://github.com/dukangalex/sing-box-1/issues]"
 E[44]="Ports are in used:  \${IN_USED[*]}"
 C[44]="正在使用中的端口: \${IN_USED[*]}"
 E[45]="Current custom route rules:"
 C[45]="当前自定义路由规则:"
 E[46]="Warp / warp-go was detected to be running. Please enter the correct server address (IP or domain):"
 C[46]="检测到 warp / warp-go 正在运行，请输入确认的服务器地址（IP 或域名）:"
-E[47]="No server ip, script exits. Feedback:[https://github.com/fscarmen/sing-box/issues]"
-C[47]="没有 server ip，脚本退出，问题反馈:[https://github.com/fscarmen/sing-box/issues]"
+E[47]="No server ip, script exits. Feedback:[https://github.com/dukangalex/sing-box-1/issues]"
+C[47]="没有 server ip，脚本退出，问题反馈:[https://github.com/dukangalex/sing-box-1/issues]"
 E[48]="Client Fingerprint  (current: \${VAL_ITEM})"
 C[48]="客户端指纹  (当前: \${VAL_ITEM})"
 E[49]="Select more protocols to install (e.g. hgbd). The order of the port numbers of the protocols is related to the ordering of the multiple choices:\n a. all (default)"
@@ -243,8 +243,8 @@ E[91]="Argo tunnel type:\n 1. Try\n 2. Token or Json. Including created through 
 C[91]="Argo 隧道类型:\n 1. Try\n 2. Token 或者 Json，包括通过 Cloudflare API 创建"
 E[92]="Change the Argo tunnel (sb -t)"
 C[92]="更换 Argo 隧道 (sb -t)"
-E[93]="Can't get the temporary tunnel domain, script exits. Feedback:[https://github.com/fscarmen/sing-box/issues]"
-C[93]="获取不到临时隧道的域名，脚本退出，问题反馈:[https://github.com/fscarmen/sing-box/issues]"
+E[93]="Can't get the temporary tunnel domain, script exits. Feedback:[https://github.com/dukangalex/sing-box-1/issues]"
+C[93]="获取不到临时隧道的域名，脚本退出，问题反馈:[https://github.com/dukangalex/sing-box-1/issues]"
 E[94]="Please bind [\${ARGO_DOMAIN}] tunnel TYPE to HTTP and URL to [localhost:\${PORT_NGINX}] in Cloudflare."
 C[94]="请在 Cloudflare 绑定 [\${ARGO_DOMAIN}] 隧道 TYPE 为 HTTP，URL 为 [localhost:\${PORT_NGINX}]"
 E[95]="Hot reload successful (PID unchanged: \$MAINPID)"
@@ -447,8 +447,8 @@ E[193]="Switch XTLS reality to Multiplex (current: vision)"
 C[193]="XTLS reality 切换为多路复用（当前：vision）"
 E[194]="Switch XTLS reality to Vision (current: multiplex)"
 C[194]="XTLS reality 切换为 vision（当前：多路复用）"
-E[195]="Downloading the latest version \${APP} failed, script exits. Feedback:[https://github.com/fscarmen/sing-box/issues]"
-C[195]="下载最新版本 \${APP} 失败，脚本退出，问题反馈:[https://github.com/fscarmen/sing-box/issues]"
+E[195]="Downloading the latest version \${APP} failed, script exits. Feedback:[https://github.com/dukangalex/sing-box-1/issues]"
+C[195]="下载最新版本 \${APP} 失败，脚本退出，问题反馈:[https://github.com/dukangalex/sing-box-1/issues]"
 E[196]="Enable dynamic subscription (render inbounds by subscription address, suitable for multi-IP servers)"
 C[196]="开启动态订阅（按订阅地址渲染入站，适合多IP机器）"
 E[197]="Disable dynamic subscription"
@@ -2712,7 +2712,7 @@ check_system_info() {
 get_sing_box_version() {
   local FORCE_VERSION RESULT_VERSION
   # FORCE_VERSION 用于在 sing-box 某个主程序出现 bug 时，强制为指定版本，以防止运行出错
-  gh_file_download 'fscarmen/sing-box' 'main' 'force_version' "$TEMP_DIR/force_version" 'https://raw.githubusercontent.com/fscarmen/sing-box/main/force_version' >/dev/null 2>&1
+  gh_file_download 'dukangalex/sing-box-1' 'main' 'force_version' "$TEMP_DIR/force_version" 'https://raw.githubusercontent.com/dukangalex/sing-box-1/main/force_version' >/dev/null 2>&1
   FORCE_VERSION=$(sed 's/^[vV]//g; s/\r//g' "$TEMP_DIR/force_version" 2>/dev/null)
   if grep -q '.' <<< "$FORCE_VERSION"; then
     RESULT_VERSION="$FORCE_VERSION"
@@ -6992,7 +6992,7 @@ create_shortcut() {
   cat > ${WORK_DIR}/sb.sh << EOF
 #!/usr/bin/env bash
 
-bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-box.sh) \$@
+bash <(wget -qO- https://raw.githubusercontent.com/dukangalex/sing-box-1/main/sing-box.sh) \$@
 EOF
   chmod +x ${WORK_DIR}/sb.sh
   ln -sf ${WORK_DIR}/sb.sh /usr/bin/sb

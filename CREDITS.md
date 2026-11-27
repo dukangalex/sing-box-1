@@ -1,6 +1,6 @@
 # CREDITS 致谢
 
-本项目自有化自 **fscarmen/sing-box**（Sing-box 全家桶一键多协议部署脚本）：
+本项目现名 **建木（angela-jianmu）**（《山海经·海内经》通天之木，众帝借以上下天地；2026-11-26 定名），自有化自 **fscarmen/sing-box**（Sing-box 全家桶一键多协议部署脚本）：
 
 - 原作者：fscarmen
 - 上游仓库：https://github.com/fscarmen/sing-box
@@ -19,7 +19,7 @@
 - jq：jqlang/jq 官方 Release
 - qrencode-go 与订阅模板：fscarmen/client_template
 - 规则集：SagerNet/sing-geosite、MetaCubeX/meta-rules-dat
-- WARP 注册脚本：fscarmen/warp（GitLab）
+- WARP 注册：原 fscarmen/warp（GitLab）的远程 api.sh 方法已由本地实现替代（openssl 本机生成密钥对、只向 Cloudflare 官方接口注册），不再执行任何远程脚本，见 docs/AUDIT.md 疑点 E
 - s6-overlay（Docker 镜像）：just-containers/s6-overlay
 
 ## 自有化剥离说明

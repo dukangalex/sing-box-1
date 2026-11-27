@@ -76,7 +76,7 @@ warp_register_local() {
 # 检查 sing-box 最新版本
 check_latest_sing-box() {
   # 检查是否强制指定版本
-  gh_file_download 'fscarmen/sing-box' 'main' 'force_version' /tmp/force_version 'https://raw.githubusercontent.com/fscarmen/sing-box/main/force_version' >/dev/null 2>&1
+  gh_file_download 'dukangalex/sing-box-1' 'main' 'force_version' /tmp/force_version 'https://raw.githubusercontent.com/dukangalex/sing-box-1/main/force_version' >/dev/null 2>&1
   local FORCE_VERSION=$(sed 's/^[vV]//g' /tmp/force_version 2>/dev/null)
 
   # 没有强制指定版本时，获取最新版本

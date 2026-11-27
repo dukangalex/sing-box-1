@@ -1,4 +1,11 @@
-# 【Sing-box 全家桶】
+# 建木 · angela-jianmu
+
+> **自有化说明**：本项目中文别名「建木」，英文名 angela-jianmu（仓库改名办理中，现仓 dukangalex/sing-box-1）。
+> 建木出自《山海经·海内经》——都广之野的通天之木，众帝借以上下天地；本项目做的正是打通两界的通道（多协议代理 + Argo 隧道），故取此名。
+> 本项目自有化自 fscarmen/sing-box（Sing-box 全家桶），原作者与鸣谢见 [CREDITS.md](CREDITS.md)；许可证 GPL-3.0 全文保留。
+> 自有化安全加固（遥测与私钥外发移除、全部下载完整性校验、远程脚本入口移除、WARP 本地注册等）见 [docs/AUDIT.md](docs/AUDIT.md)。
+
+# 【Sing-box 全家桶】（上游原名）
 
 * * *
 
@@ -197,7 +204,7 @@
 
 * 首次运行
 ```
-bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-box.sh)
+bash <(wget -qO- https://raw.githubusercontent.com/dukangalex/sing-box-1/main/sing-box.sh)
 ```
 
 * 再次运行
@@ -242,17 +249,17 @@ sb
 ### 方式1. 最快的安装方式：自动补充所有参数
 #### 中文
 ```
-bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-box.sh) -l
+bash <(wget -qO- https://raw.githubusercontent.com/dukangalex/sing-box-1/main/sing-box.sh) -l
 ```
 
 #### 英文
 ```
-bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-box.sh) -k
+bash <(wget -qO- https://raw.githubusercontent.com/dukangalex/sing-box-1/main/sing-box.sh) -k
 ```
 
 ### 方式2. KV 配置文件，内容参照本库里的 config.conf
 ```
-bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-box.sh) -f config.conf
+bash <(wget -qO- https://raw.githubusercontent.com/dukangalex/sing-box-1/main/sing-box.sh) -f config.conf
 ```
 
 ### 方式3. KV 传参，举例
@@ -262,7 +269,7 @@ bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-b
 <br>
 
 ```
-bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-box.sh) \
+bash <(wget -qO- https://raw.githubusercontent.com/dukangalex/sing-box-1/main/sing-box.sh) \
   --LANGUAGE c \
   --CHOOSE_PROTOCOLS a \
   --SUBSCRIBE dynamic
@@ -275,7 +282,7 @@ bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-b
 <br>
 
 ```
-bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-box.sh) \
+bash <(wget -qO- https://raw.githubusercontent.com/dukangalex/sing-box-1/main/sing-box.sh) \
   --LANGUAGE c \
   --CHOOSE_PROTOCOLS a \
   --START_PORT 8881 \
@@ -299,7 +306,7 @@ bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-b
 <br>
 
 ```
-bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-box.sh) \
+bash <(wget -qO- https://raw.githubusercontent.com/dukangalex/sing-box-1/main/sing-box.sh) \
   --LANGUAGE c \
   --CHOOSE_PROTOCOLS a \
   --START_PORT 8881 \
@@ -321,7 +328,7 @@ bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-b
 <br>
 
 ```
-bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-box.sh) \
+bash <(wget -qO- https://raw.githubusercontent.com/dukangalex/sing-box-1/main/sing-box.sh) \
   --LANGUAGE c \
   --CHOOSE_PROTOCOLS a \
   --START_PORT 8881 \
@@ -343,7 +350,7 @@ bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-b
 <br>
 
 ```
-bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-box.sh) \
+bash <(wget -qO- https://raw.githubusercontent.com/dukangalex/sing-box-1/main/sing-box.sh) \
   --LANGUAGE c \
   --CHOOSE_PROTOCOLS a \
   --START_PORT 8881 \
@@ -365,7 +372,7 @@ bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-b
 <br>
 
 ```
-bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-box.sh) \
+bash <(wget -qO- https://raw.githubusercontent.com/dukangalex/sing-box-1/main/sing-box.sh) \
   --LANGUAGE c \
   --CHOOSE_PROTOCOLS a \
   --START_PORT 8881 \
@@ -389,7 +396,7 @@ bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-b
 <br>
 
 ```
-bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-box.sh) \
+bash <(wget -qO- https://raw.githubusercontent.com/dukangalex/sing-box-1/main/sing-box.sh) \
   --LANGUAGE c \
   --CHOOSE_PROTOCOLS a \
   --START_PORT 8881 \
@@ -413,7 +420,7 @@ bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-b
 <br>
 
 ```
-bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-box.sh) \
+bash <(wget -qO- https://raw.githubusercontent.com/dukangalex/sing-box-1/main/sing-box.sh) \
   --LANGUAGE c \
   --CHOOSE_PROTOCOLS a \
   --START_PORT 8881 \
@@ -437,7 +444,7 @@ bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-b
 <br>
 
 ```
-bash <(wget -qO- https://raw.githubusercontent.com/fscarmen/sing-box/main/sing-box.sh) \
+bash <(wget -qO- https://raw.githubusercontent.com/dukangalex/sing-box-1/main/sing-box.sh) \
   --LANGUAGE c \
   --CHOOSE_PROTOCOLS a \
   --START_PORT 8881 \
