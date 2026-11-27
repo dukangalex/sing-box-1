@@ -10,25 +10,27 @@
 
 脚本主体功能与宣称一致：多协议入站生成、多客户端订阅输出、Argo 隧道、WARP 解锁分流，未发现把节点凭据批量回传作者服务器的后门式代码。
 
-但有 **两处与部署功能无关或削弱隐私的外发，必须处理后才算过自家隐私基线，本报告不予放行、已上报主聊天定夺**：
+原有 **两处与部署功能无关或削弱隐私的外发**（疑点 A、B）。已按主聊天 2026-11-26 定夺（依全项目基础章程隐私底线）**处置完毕**：
 
-1. **运行次数统计（遥测）** — 见疑点 A
-2. **Reality 私钥外发兜底** — 见疑点 B
+1. **运行次数统计（遥测）** — 已整段移除，提交 7595fce
+2. **Reality 私钥外发兜底** — 已删除外发路径，提交 dcd8f2e
 
 另有三项已知风险（下载无校验和、经第三方 GitHub 代理下载、菜单内远程脚本直跑），属上游设计取舍，逐项列明，自有化迭代时按优先级收。
 
 ## 疑点清单
 
-### A.运行统计回传作者统计服务
+### A.【已处置，提交 7595fce】运行统计回传作者统计服务
 - sing-box.sh:643-652 `statistics_of_run_times()`；主入口 sing-box.sh:7751 每次运行脚本都执行 `update`（注释明示该行必须保留）；docker_init.sh:1400 容器版同理。
 - 行为：向 `https://stat.cloudflare.now.cc/updateStats?script=<脚本名>` 发 GET，取回当天 / 累计运行次数并展示。域名为作者自有服务（*.cloudflare.now.cc）。
 - 外发内容：脚本名、访问时间、服务器公网 IP（HTTP 请求天然携带）。不带 UUID、节点配置等凭据。
-- 定性：与部署功能无关的遥测，撞自有化隐私底线（遥测组件不收编）。建议：自有化版整段移除该函数与调用，展示计数一并去掉。
+- 定性：与部署功能无关的遥测，撞自有化隐私底线（遥测组件不收编）。
+- 处置（2026-11-26）：函数本体、主入口 update 调用、节点清单 get 调用、docker_init.sh 容器版统计块已全部删除；grep 复查 stat.cloudflare.now.cc / statistics_of_run_times / updateStats 三词在两个脚本中零残留（语言表里的「运行次数」字样为无调用的 inert 文案，不构成外发）；bash -n 复验通过。
 
-### B.自定义 Reality 私钥在兜底路径下外发第三方
+### B.【已处置，提交 dcd8f2e】自定义 Reality 私钥在兜底路径下外发第三方
 - sing-box.sh:5127：当用户指定了 Reality 私钥、且本机**没有 xxd 命令**时，脚本把私钥以 GET 参数发往 `https://realitykey.cloudflare.now.cc/?privateKey=$REALITY_PRIVATE`，让作者的在线服务算出公钥。
 - 正常路径（有 xxd）是本地用 openssl 派生公钥，不外发；docker_init.sh 亦全程本地派生。
-- 定性：私钥离开本机且走 URL 查询串（易被日志留存），属凭据级外发，不可接受。建议：删掉该兜底分支；无 xxd 时改为本地生成新密钥对或明确报错退出，绝不外发私钥。
+- 定性：私钥离开本机且走 URL 查询串（易被日志留存），属凭据级外发，不可接受。
+- 处置（2026-11-26）：兜底分支已删除。无 xxd 时改为调用脚本既有 error() 报错退出（中英双语），明示原因（派生公钥需要 xxd、私钥不会发往任何在线服务）与 remedy（安装 xxd 后重试，或不指定 REALITY_PRIVATE 让脚本本地生成新密钥对）；不静默降级、不换用其他在线服务。自动生成密钥对的本地流程（generate_reality_keypair）未动。grep 复查 realitykey 零残留，bash -n 复验通过。
 
 ### C.下载的二进制无完整性校验，且大量使用 --no-check-certificate
 - sing-box、jq、qrencode、cloudflared 均直接下载解压 / 执行，全仓无 sha256 / 签名校验（grep 实证）；`--no-check-certificate` 在 sing-box.sh 出现 37 处、docker_init.sh 10 处。
@@ -81,8 +83,8 @@
 ### 与功能无关的外发
 | 目标 | 用途 | 处置 |
 |---|---|---|
-| stat.cloudflare.now.cc/updateStats | 运行次数统计 | 疑点 A，须移除 |
-| realitykey.cloudflare.now.cc（兜底） | 在线算 Reality 公钥 | 疑点 B，须移除兜底 |
+| stat.cloudflare.now.cc/updateStats | 运行次数统计 | 疑点 A，已移除（7595fce） |
+| realitykey.cloudflare.now.cc（兜底） | 在线算 Reality 公钥 | 疑点 B，已移除兜底（dcd8f2e） |
 | api.qrserver.com（清单链接） | 在线二维码图 | 疑点 F，建议删链接行 |
 
 ## 基线检查（2026-11-26）
@@ -97,4 +99,4 @@
 - README 第 14 节「感谢赞助商」整节删除：SharonNetworks（sharon.io 广告整段）、vps.town（赞助段）。目录与后续章节序号已顺延。
 - README 第 5 节 Argo Json 获取：删去作者自有站的推广式引导，改为中立的功能表述。
 - 保留：第 13 节鸣谢（千歌 sing-box 模板、zmlu 隧道脚本）属致谢、不是推广；全部功能说明、教程、参数表保留。
-- 未动脚本代码：脚本内提示文案中的作者自有站链接、统计与兜底逻辑，处置方案见疑点 A/B/D，待主聊天定夺后在标识替换轮一并处理。
+- 脚本代码处置：统计遥测与 Reality 私钥外发兜底已按定夺删除（见疑点 A/B 的处置记录）；脚本内提示文案中的作者自有站链接（疑点 D 相关）留待命名拍板后的标识替换轮一并处理。
