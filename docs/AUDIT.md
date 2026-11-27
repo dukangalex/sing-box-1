@@ -45,9 +45,10 @@
 - WARP 账号注册：`bash <(wget https://gitlab.com/fscarmen/warp/-/raw/main/api.sh) --register`（sing-box.sh:2051、2535），属功能性（向 Cloudflare 注册 WARP 账户），但执行的是远程代码。
 - 定性：均为用户在菜单里主动选才触发，不是后台静默执行；但自有化口径下应逐项标注来源、能本地化的本地化。
 
-### F.订阅二维码在线链接（仅印在节点清单里，脚本不自动访问）
+### F.【已处置，提交 4956e9a】订阅二维码在线链接（仅印在节点清单里，脚本不自动访问）
 - 节点清单文本里印有 `https://api.qrserver.com/v1/create-qr-code/?...&data=<订阅URL>`（sing-box.sh:6868-6871 等、docker_init.sh:1300）。
 - 脚本本身不请求该地址；但用户点开链接时，含 UUID 的订阅地址会发给 qrserver.com。清单里同时给出了本地 qrencode 生成的二维码，建议自有化版只留本地二维码、删在线链接行。
+- 处置（2026-11-26，用户亲令本项目数据安全零妥协后加固）：sing-box.sh 与 docker_init.sh 中 6 处 qrserver 链接已全部删除，只保留本地 qrencode 生成的二维码；grep 复查 qrserver 零残留，bash -n 通过。
 
 ### G.Docker 版写死一把共享 WARP 私钥
 - docker_init.sh 生成的 02_endpoints.json 里 WARP endpoint 使用固定 private_key（上游公开的共享兜底账户，README 更新日志 2026.08 v1.3.21 提及共享密钥兜底）。
@@ -86,6 +87,19 @@
 | stat.cloudflare.now.cc/updateStats | 运行次数统计 | 疑点 A，已移除（7595fce） |
 | realitykey.cloudflare.now.cc（兜底） | 在线算 Reality 公钥 | 疑点 B，已移除兜底（dcd8f2e） |
 | api.qrserver.com（清单链接） | 在线二维码图 | 疑点 F，建议删链接行 |
+
+## 数据安全加固台账（2026-11-26，用户亲令「必须 100% 保证用户数据安全」后立）
+
+口径：与凭据、订阅、节点配置沾边的外发零容忍——已清的：疑点 A 遥测、疑点 B 私钥外发、疑点 F 订阅地址在线二维码、脚本提示文案引导用户去作者自有站生成 Argo 凭据（已改官方控制台 / 本地 cloudflared 表述，提交 b21295f）。未清的四项完整性风险及处置方向：
+
+| 项 | 风险 | 处置方向 | 状态 |
+|---|---|---|---|
+| C | 下载的 sing-box / cloudflared / jq / qrencode 二进制无完整性校验，--no-check-certificate 共 47 处 | 用 GitHub API 返回的资产 sha256 digest 逐个校验（已实证 SagerNet Release 资产带 digest 字段，如 sing-box-1.14.5-linux-amd64-musl.tar.gz 有 sha256 值；上游虽不发校验文件，API digest 可用）；校验不过即中止。逐处去掉 --no-check-certificate 需逐站核对证书情况、分批做 | 待排期（方案已备） |
+| D | 下载可经第三方 GitHub 反代（ghproxy.lvedong.eu.org、accel.cloudflare.nyc.mn）与作者优选 IP 服务 | 与 C 联动：补齐 digest 校验后，反代只影响可用性、不影响完整性；默认仍建议直连官方源、反代改显式可选 | 待排期（随 C） |
+| E | 菜单远程脚本直跑（tcpx / argox / sba / tcp.hy2.sh）与 WARP 注册远程 api.sh | 逐项评估：能本地化的本地化；不能的在菜单文案明示来源与风险，或整项移除 | 待评估 |
+| G | Docker 版写死共享 WARP 私钥 | 移植 VPS 版的 WARP 预注册逻辑，为每个部署生成独立账户；或明确提示用户自备 | 待排期 |
+
+说明：以上四项均为「知悉」级完整性风险，不涉及用户数据已被外发；涉及用户数据的外发点（A / B / F 与作者站凭据引导）已全部清零。
 
 ## 基线检查（2026-11-26）
 
