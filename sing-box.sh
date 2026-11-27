@@ -1999,9 +1999,31 @@ custom_route_menu() {
 # 获取 WARP 账户并解析到全局变量 WARP_ADDRESS6 / WARP_PRIVATE_KEY / WARP_RESERVED[1..3]
 # $1 为空则在线注册；非空则直接解析该 JSON（如安装期后台预注册的缓存）
 # 返回 0 成功 / 1 失败（接口无 id 或解析字段缺失），失败时调用方自行兜底
+# 本地注册 WARP 免费账户（自有化替代原 gitlab 远程 api.sh）：密钥对在本机用 openssl 生成，只把公钥发往 Cloudflare 官方注册接口，私钥不出本机。
+# 输出与原 api.sh 兼容的账户 JSON（id / private_key / v6 / reserved），供 warp_account_register 解析。
+warp_register_local() {
+  local PRIV_FILE=$(mktemp) PRIV_B64 PUB_B64 TOS RESP ID V6 CLIENT_ID R1 R2 R3
+  openssl genpkey -algorithm X25519 -out "$PRIV_FILE" >/dev/null 2>&1 || return 1
+  PRIV_B64=$(openssl pkey -in "$PRIV_FILE" -outform DER 2>/dev/null | tail -c 32 | base64 -w0)
+  PUB_B64=$(openssl pkey -in "$PRIV_FILE" -pubout -outform DER 2>/dev/null | tail -c 32 | base64 -w0)
+  rm -f "$PRIV_FILE"
+  [ -n "$PRIV_B64" ] && [ -n "$PUB_B64" ] || return 1
+  TOS=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z" 2>/dev/null)
+  RESP=$(wget -qO- --timeout=10 --tries=2 --header='Content-Type: application/json' --header='User-Agent: okhttp/3.12.1' --post-data="{\"key\":\"$PUB_B64\",\"install_id\":\"\",\"fcm_token\":\"\",\"tos\":\"$TOS\",\"model\":\"PC\",\"type\":\"Android\",\"locale\":\"en_US\"}" 'https://api.cloudflareclient.com/v0a2158/reg' 2>/dev/null)
+  grep -q '"id"' <<< "$RESP" || return 1
+  ID=$(grep -o '"id":"[^"]*"' <<< "$RESP" | head -n1 | cut -d'"' -f4)
+  V6=$(grep -o '"addresses":{"v4":"[^"]*","v6":"[^"]*"' <<< "$RESP" | head -n1 | sed 's/.*"v6":"//; s/"$//')
+  case "$V6" in \[*\]:*) V6=$(sed 's/^\[//; s/\]:[0-9]*$//' <<< "$V6");; esac
+  [ -n "$V6" ] || V6=$(grep -o '"v6":"[^"]*"' <<< "$RESP" | head -n1 | cut -d'"' -f4 | sed 's/^\[//; s/\]:[0-9]*$//')
+  CLIENT_ID=$(grep -o '"client_id":"[^"]*"' <<< "$RESP" | head -n1 | cut -d'"' -f4)
+  read R1 R2 R3 <<< "$(echo "$CLIENT_ID" | base64 -d 2>/dev/null | od -An -tu1)"
+  [ -n "$ID" ] && [ -n "$V6" ] && [ -n "$R1" ] && [ -n "$R2" ] && [ -n "$R3" ] || return 1
+  printf '{\n  "id": "%s",\n  "private_key": "%s",\n  "config": {\n    "interface": {\n      "addresses": {\n        "v4": "172.16.0.2",\n        "v6": "%s"\n      }\n    }\n  },\n  "reserved": [\n    %s,\n    %s,\n    %s\n  ]\n}\n' "$ID" "$PRIV_B64" "$V6" "$R1" "$R2" "$R3"
+}
+
 warp_account_register() {
   local WARP_ACCOUNT="$1"
-  [ -n "$WARP_ACCOUNT" ] || WARP_ACCOUNT=$(timeout 15 bash <(wget -qO- --timeout=5 --tries=1 "https://gitlab.com/fscarmen/warp/-/raw/main/api.sh") --register)
+  [ -n "$WARP_ACCOUNT" ] || WARP_ACCOUNT=$(warp_register_local)
 
   grep -q '"id"' <<< "$WARP_ACCOUNT" || return 1
 
@@ -2483,7 +2505,7 @@ check_install() {
     # 任务 4: 注册 warp 账号（仅支持 TUN 时才有 warp-ep 出站，无 TUN 时不需注册）
     [ "$IS_TUN" = 'is_tun' ] &&
     {
-      timeout 15 bash <(wget -qO- --timeout=5 --tries=1 "https://gitlab.com/fscarmen/warp/-/raw/main/api.sh") --register > $TEMP_DIR/warp_account.json 2>/dev/null
+      warp_register_local > $TEMP_DIR/warp_account.json 2>/dev/null
     } &
   elif [ "${STATUS[0]}" != "$(text 26)" ]; then
     # 查 sing-box 进程号，运行时长和内存占用，占用的端口
@@ -7569,12 +7591,8 @@ menu_setting() {
     OPTION[4]="4 .  $(text 92)"
     OPTION[5]="5 .  $(text 121)"
     OPTION[6]="6 .  $(text 31)"
-    OPTION[7]="7 .  $(text 32)"
-    OPTION[8]="8 .  $(text 62)"
-    OPTION[9]="9 .  $(text 33)"
-    OPTION[10]="10.  $(text 59)"
-    OPTION[11]="11.  $(text 69)"
-    OPTION[12]="12.  $(text 76)"
+    OPTION[7]="7 .  $(text 62)"
+    OPTION[8]="8 .  $(text 33)"
 
     ACTION[1]() { export_list; exit 0; }
 
@@ -7604,32 +7622,19 @@ menu_setting() {
     ACTION[4]() { change_argo; exit; }
     ACTION[5]() { change_config; exit; }
     ACTION[6]() { version; exit; }
-    ACTION[7]() { bash <(wget -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh); exit; }
-    ACTION[8]() { change_protocols; exit; }
-    ACTION[9]() { uninstall; exit; }
-    ACTION[10]() { bash <(wget -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/argox/main/argox.sh) -$L; exit; }
-    ACTION[11]() { bash <(wget -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sba/main/sba.sh) -$L; exit; }
-    ACTION[12]() { bash <(wget -qO- https://tcp.hy2.sh/); exit; }
+    ACTION[7]() { change_protocols; exit; }
+    ACTION[8]() { uninstall; exit; }
   else
     OPTION[1]="1.  $(text 115)"
     OPTION[2]="2.  $(text 34) + Argo + $(text 80) $(text 89)"
     OPTION[3]="3.  $(text 34) + Argo $(text 89)"
     OPTION[4]="4.  $(text 34) + $(text 80) $(text 89)"
     OPTION[5]="5.  $(text 34)"
-    OPTION[6]="6.  $(text 32)"
-    OPTION[7]="7.  $(text 59)"
-    OPTION[8]="8.  $(text 69)"
-    OPTION[9]="9.  $(text 76)"
-
     ACTION[1]() { IS_FAST_INSTALL='is_fast_install'; CHOOSE_PROTOCOLS=${CHOOSE_PROTOCOLS:-'a'}; START_PORT=${START_PORT:-"$START_PORT_DEFAULT"}; CDN=${CDN:-"${CDN_DOMAIN[0]}"}; IS_SUB='is_sub'; IS_ARGO='is_argo'; install_sing-box; export_list install; create_shortcut; exit; }
     ACTION[2]() { IS_SUB=is_sub; IS_ARGO=is_argo; install_sing-box; export_list install; create_shortcut; exit; }
     ACTION[3]() { IS_SUB=no_sub; IS_ARGO=is_argo; install_sing-box; export_list install; create_shortcut; exit; }
     ACTION[4]() { IS_SUB=is_sub; IS_ARGO=no_argo; install_sing-box; export_list install; create_shortcut; exit; }
     ACTION[5]() { install_sing-box; export_list install; create_shortcut; exit; }
-    ACTION[6]() { bash <(wget -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh); exit; }
-    ACTION[7]() { bash <(wget -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/argox/main/argox.sh) -$L; exit; }
-    ACTION[8]() { bash <(wget -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sba/main/sba.sh) -$L; exit; }
-    ACTION[9]() { bash <(wget -qO- ${GH_PROXY}https://tcp.hy2.sh/); exit; }
   fi
 
   [ "${#OPTION[@]}" -ge '10' ] && OPTION[0]="0 .  $(text 35)" || OPTION[0]="0.  $(text 35)"
@@ -7867,7 +7872,7 @@ for z in ${!ALL_PARAMETER[@]}; do
       check_system_info; check_arch; version; exit 0
       ;;
     -B )
-      bash <(wget -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh); exit
+      error "\n 该选项已移除: 第三方远程脚本 (tcpx) 不再随本脚本分发执行。如需内核 / BBR 调优，请使用你信任的来源自行操作。 / This option was removed: third-party remote scripts (tcpx) are no longer executed by this script. For kernel / BBR tuning, use a source you trust. \n"
       ;;
     -R )
       change_protocols; exit 0

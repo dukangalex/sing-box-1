@@ -51,6 +51,28 @@ gh_file_download() {
   [ "$CALC" = "$SHA" ] || { rm -f "$OUT"; warning "\n ${RPATH} 的校验不通过，文件已删除，安装中止。 / Checksum verification failed for ${RPATH}; the file was deleted and installation aborted. \n"; return 1; }
 }
 
+# 本地注册 WARP 免费账户（自有化实现）：密钥对在本机用 openssl 生成，只把公钥发往 Cloudflare 官方注册接口，私钥不出本机。
+# 输出账户 JSON（id / private_key / v6 / reserved）。
+warp_register_local() {
+  local PRIV_FILE=$(mktemp) PRIV_B64 PUB_B64 TOS RESP ID V6 CLIENT_ID R1 R2 R3
+  openssl genpkey -algorithm X25519 -out "$PRIV_FILE" >/dev/null 2>&1 || return 1
+  PRIV_B64=$(openssl pkey -in "$PRIV_FILE" -outform DER 2>/dev/null | tail -c 32 | base64 -w0)
+  PUB_B64=$(openssl pkey -in "$PRIV_FILE" -pubout -outform DER 2>/dev/null | tail -c 32 | base64 -w0)
+  rm -f "$PRIV_FILE"
+  [ -n "$PRIV_B64" ] && [ -n "$PUB_B64" ] || return 1
+  TOS=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z" 2>/dev/null)
+  RESP=$(wget -qO- --timeout=10 --tries=2 --header='Content-Type: application/json' --header='User-Agent: okhttp/3.12.1' --post-data="{\"key\":\"$PUB_B64\",\"install_id\":\"\",\"fcm_token\":\"\",\"tos\":\"$TOS\",\"model\":\"PC\",\"type\":\"Android\",\"locale\":\"en_US\"}" 'https://api.cloudflareclient.com/v0a2158/reg' 2>/dev/null)
+  grep -q '"id"' <<< "$RESP" || return 1
+  ID=$(grep -o '"id":"[^"]*"' <<< "$RESP" | head -n1 | cut -d'"' -f4)
+  V6=$(grep -o '"addresses":{"v4":"[^"]*","v6":"[^"]*"' <<< "$RESP" | head -n1 | sed 's/.*"v6":"//; s/"$//')
+  case "$V6" in \[*\]:*) V6=$(sed 's/^\[//; s/\]:[0-9]*$//' <<< "$V6");; esac
+  [ -n "$V6" ] || V6=$(grep -o '"v6":"[^"]*"' <<< "$RESP" | head -n1 | cut -d'"' -f4 | sed 's/^\[//; s/\]:[0-9]*$//')
+  CLIENT_ID=$(grep -o '"client_id":"[^"]*"' <<< "$RESP" | head -n1 | cut -d'"' -f4)
+  read R1 R2 R3 <<< "$(echo "$CLIENT_ID" | base64 -d 2>/dev/null | od -An -tu1)"
+  [ -n "$ID" ] && [ -n "$V6" ] && [ -n "$R1" ] && [ -n "$R2" ] && [ -n "$R3" ] || return 1
+  printf '{\n  "id": "%s",\n  "private_key": "%s",\n  "config": {\n    "interface": {\n      "addresses": {\n        "v4": "172.16.0.2",\n        "v6": "%s"\n      }\n    }\n  },\n  "reserved": [\n    %s,\n    %s,\n    %s\n  ]\n}\n' "$ID" "$PRIV_B64" "$V6" "$R1" "$R2" "$R3"
+}
+
 # 检查 sing-box 最新版本
 check_latest_sing-box() {
   # 检查是否强制指定版本
@@ -212,6 +234,20 @@ EOF
 EOF
 
   # 生成 endpoint 配置
+  # WARP 账户（自有化口径）：每台机器独立注册，不再使用任何写死的共享账户。
+  # 优先用环境变量手动提供的自有账户（WARP_PRIVATE_KEY / WARP_ADDRESS6 / WARP_RESERVED="r1,r2,r3"），否则本地注册一个新的。
+  if [ -n "$WARP_PRIVATE_KEY" ] && [ -n "$WARP_ADDRESS6" ]; then
+    WARP_RESERVED_CSV=${WARP_RESERVED:-0,0,0}
+  elif warp_register_local > /tmp/warp_account.json 2>/dev/null && grep -q '"id"' /tmp/warp_account.json; then
+    WARP_ADDRESS6=$(awk -F'"' '/"v6":/ && $4 !~ /^\[/ {print $4}' /tmp/warp_account.json)
+    WARP_PRIVATE_KEY=$(awk -F'"' '/"private_key"/{print $4}' /tmp/warp_account.json)
+    WARP_RESERVED_CSV=$(awk '/"reserved":/ {getline; gsub(/[^0-9]/,""); r1=$0; getline; gsub(/[^0-9]/,""); r2=$0; getline; gsub(/[^0-9]/,""); print r1","r2","$0}' /tmp/warp_account.json)
+  else
+    warning "\n WARP 账户注册失败，已停止生成配置。处理办法: 检查网络后重试，或通过环境变量 WARP_PRIVATE_KEY / WARP_ADDRESS6 / WARP_RESERVED 提供你自己的 WARP 账户。 / WARP account registration failed; configuration generation stopped. Remedy: retry with network access, or provide your own WARP account via the WARP_PRIVATE_KEY / WARP_ADDRESS6 / WARP_RESERVED environment variables. \n"
+    exit 1
+  fi
+  IFS=',' read -r WARP_R1 WARP_R2 WARP_R3 <<< "$WARP_RESERVED_CSV"
+
   cat > ${WORK_DIR}/conf/02_endpoints.json << EOF
 {
     "endpoints":[
@@ -221,9 +257,9 @@ EOF
             "mtu":1280,
             "address":[
                 "172.16.0.2/32",
-                "2606:4700:110:8a36:df92:102a:9602:fa18/128"
+                "${WARP_ADDRESS6}/128"
             ],
-            "private_key":"YFYOAdbw1bKTHlNNi+aEjBM3BO7unuFC5rOkMRAz9XY=",
+            "private_key":"${WARP_PRIVATE_KEY}",
             "peers": [
               {
                 "address": "engage.cloudflareclient.com",
@@ -234,9 +270,9 @@ EOF
                   "::/0"
                 ],
                 "reserved":[
-                    78,
-                    135,
-                    76
+                    ${WARP_R1},
+                    ${WARP_R2},
+                    ${WARP_R3}
                 ]
               }
             ]

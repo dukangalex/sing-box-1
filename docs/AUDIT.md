@@ -40,7 +40,7 @@
 - sing-box.sh:7 `GITHUB_PROXY=('https://ghproxy.lvedong.eu.org/' 'https://accel.cloudflare.nyc.mn/')`，sing-box.sh:26 另有优选 IP 探测 `ip.cloudflare.now.cc / ip.cloudflare.nyc.mn`（作者自有服务）。
 - 脚本会探测并选用可用代理前缀下载二进制与订阅模板（sing-box.sh:588-603）。经第三方代理下载 + 无校验和（疑点 C）叠加，风险更高。建议：自有化版默认直连官方源，代理改为用户显式可选配置。
 
-### E.菜单 / 工具箱内的远程脚本直接执行（用户手动触发，非静默）
+### E.【已处置，见加固台账】菜单 / 工具箱内的远程脚本直接执行（用户手动触发，非静默）
 - `sb -b` 与工具箱菜单：`bash <(wget... ylx2016/Linux-NetSpeed/tcpx.sh)`（内核 / BBR）、`bash <(wget... fscarmen/argox/argox.sh)`、`bash <(wget... fscarmen/sba/sba.sh)`、`bash <(wget https://tcp.hy2.sh/)`。
 - WARP 账号注册：`bash <(wget https://gitlab.com/fscarmen/warp/-/raw/main/api.sh) --register`（sing-box.sh:2051、2535），属功能性（向 Cloudflare 注册 WARP 账户），但执行的是远程代码。
 - 定性：均为用户在菜单里主动选才触发，不是后台静默执行；但自有化口径下应逐项标注来源、能本地化的本地化。
@@ -50,7 +50,7 @@
 - 脚本本身不请求该地址；但用户点开链接时，含 UUID 的订阅地址会发给 qrserver.com。清单里同时给出了本地 qrencode 生成的二维码，建议自有化版只留本地二维码、删在线链接行。
 - 处置（2026-11-26，用户亲令本项目数据安全零妥协后加固）：sing-box.sh 与 docker_init.sh 中 6 处 qrserver 链接已全部删除，只保留本地 qrencode 生成的二维码；grep 复查 qrserver 零残留，bash -n 通过。
 
-### G.Docker 版写死一把共享 WARP 私钥
+### G.【已处置，见加固台账】Docker 版写死一把共享 WARP 私钥
 - docker_init.sh 生成的 02_endpoints.json 里 WARP endpoint 使用固定 private_key（上游公开的共享兜底账户，README 更新日志 2026.08 v1.3.21 提及共享密钥兜底）。
 - 不是用户数据外泄，但所有用默认值的部署共用同一 WARP 身份；VPS 版有预注册独立账户逻辑，Docker 版没有。
 
@@ -90,14 +90,14 @@
 
 ## 数据安全加固台账（2026-11-26，用户亲令「必须 100% 保证用户数据安全」后立）
 
-口径：与凭据、订阅、节点配置沾边的外发零容忍——已清的：疑点 A 遥测、疑点 B 私钥外发、疑点 F 订阅地址在线二维码、脚本提示文案引导用户去作者自有站生成 Argo 凭据（已改官方控制台 / 本地 cloudflared 表述，提交 b21295f）。未清的四项完整性风险及处置方向：
+口径：与凭据、订阅、节点配置沾边的外发零容忍——已清的：疑点 A 遥测、疑点 B 私钥外发、疑点 F 订阅地址在线二维码、脚本提示文案引导用户去作者自有站生成 Argo 凭据（已改官方控制台 / 本地 cloudflared 表述，提交 b21295f）。四项完整性风险及处置（已全部销账）：
 
 | 项 | 风险 | 处置方向 | 状态 |
 |---|---|---|---|
 | C | 下载的 sing-box / cloudflared / jq / qrencode 二进制无完整性校验，--no-check-certificate 共 47 处 | 已落地：新增 gh_release_download / gh_file_download 两道校验门——Release 资产用 GitHub 官方 API 的 sha256 digest 校验，仓库文件（模板、qrencode、force_version）用 git trees 的 blob sha 按 git blob 规则校验，不过即删档中止并给 remedy（稍后重试或设 GITHUB_TOKEN 提 API 额度）；47 处 --no-check-certificate 与 curl -k 已全清（两脚本 grep 零残留）。jq 固定版由 1.7.1 升 1.8.1（1.7.1 的资产无 digest、1.8.1 有）。校验链已实测：解析对活体 API JSON 命中、jq 1.8.1 真实下载校验通过且可运行、API 额度不足时失败关闭。注：远程 rule-set（.srs）由 sing-box 内核按配置直拉官方仓，不经脚本下载，不在本项范围 | 已处置 |
 | D | 下载可经第三方 GitHub 反代（ghproxy.lvedong.eu.org、accel.cloudflare.nyc.mn）与作者优选 IP 服务 | 已落地：check_cdn 的自动探测 / 自动启用反代逻辑整段删除，默认直连官方源；仅当用户显式设置环境变量 GH_PROXY 时才经其指定地址下载，且校验仍走官方 API、完整性判定不受代理影响。grep 复查 ghproxy / GITHUB_PROXY 默认表零残留 | 已处置 |
-| E | 菜单远程脚本直跑（tcpx / argox / sba / tcp.hy2.sh）与 WARP 注册远程 api.sh | 逐项评估：能本地化的本地化；不能的在菜单文案明示来源与风险，或整项移除 | 待评估 |
-| G | Docker 版写死共享 WARP 私钥 | 移植 VPS 版的 WARP 预注册逻辑，为每个部署生成独立账户；或明确提示用户自备 | 待排期 |
+| E | 菜单远程脚本直跑（tcpx / argox / sba / tcp.hy2.sh）与 WARP 注册远程 api.sh | 已落地：两个菜单变体中的 tcpx / argox / sba / tcp.hy2 四个远程脚本入口连同菜单项一并移除并重新编号，命令行 -B 改为明确报错说明已移除；WARP 注册的 gitlab 远程 api.sh 已由本地实现 warp_register_local 替代——openssl 本机生成 X25519 密钥对、只把公钥发往 Cloudflare 官方注册接口、私钥不出本机，输出与脚本既有解析逻辑兼容（已对真实注册接口实测：注册成功且 v6 / reserved / 私钥格式逐项解析正确）。grep 复查远程脚本端点零残留（仅剩自有说明文字提及 tcpx 名称） | 已处置 |
+| G | Docker 版写死共享 WARP 私钥 | 已落地：docker_init.sh 中写死的共享 WARP 私钥、IPv6 地址与 reserved 已全部删除（grep 零残留）；生成 02_endpoints.json 前先取得本机独立账户——优先环境变量 WARP_PRIVATE_KEY / WARP_ADDRESS6 / WARP_RESERVED 手动提供的自有账户，否则调用与 VPS 版同一套 warp_register_local 本地注册；注册失败即报错退出并给 remedy，不回退共享账户 | 已处置 |
 
 说明：以上四项均为「知悉」级完整性风险，不涉及用户数据已被外发；涉及用户数据的外发点（A / B / F 与作者站凭据引导）已全部清零。
 
