@@ -5113,7 +5113,7 @@ sing-box_json() {
         REALITY_PUBLIC=$(base64 -w0 $TEMP_DIR/_X25519_PUB_RAW | tr '+/' '-_' | sed -E 's/=+$//')
       done
     else
-      REALITY_PUBLIC=$(wget --no-check-certificate -qO- --tries=3 --timeout=2 https://realitykey.cloudflare.now.cc/?privateKey=$REALITY_PRIVATE | awk -F '"' '/publicKey/{print $4}')
+      error "\n Reality 私钥派生公钥需要本机的 xxd 命令，当前环境未找到 xxd，安装已停止。私钥不会发送到任何在线服务。处理办法：安装 xxd 后重试；或不指定 REALITY_PRIVATE，让脚本在本地生成新的密钥对。\n Deriving the Reality public key from your private key requires xxd on this machine, but xxd was not found. Installation stopped. Your private key is never sent to any online service. Remedy: install xxd and retry, or omit REALITY_PRIVATE and let the script generate a fresh keypair locally. \n"
     fi
   elif [[ "${#REALITY_PRIVATE[@]}" = 0 && "${#REALITY_PUBLIC[@]}" = 0 ]]; then
     generate_reality_keypair new_keypair
