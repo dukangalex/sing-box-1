@@ -6854,12 +6854,6 @@ $AUTO_SUBSCRIBE_2
 
 $(text 80) QRcode:
 $(text 82) 1:
-https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$QR_SUBSCRIBE_1
-
-$(text 82) 2:
-https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$QR_SUBSCRIBE_2
-
-$(text 82) 1:
 $(${WORK_DIR}/qrencode "$QR_SUBSCRIBE_1")
 
 $(text 82) 2:
@@ -6953,11 +6947,7 @@ $(text 82) 2:
 $AUTO_SUBSCRIBE_2
 
  $(text 80) QRcode:
-$(text 82) 1:
-https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$QR_SUBSCRIBE_1
-
-$(text 82) 2:
-https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$QR_SUBSCRIBE_2")
+")
 
 $(hint "$(text 82) 1:")
 $(${WORK_DIR}/qrencode "$QR_SUBSCRIBE_1")

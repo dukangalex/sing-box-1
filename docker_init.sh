@@ -1297,9 +1297,6 @@ https://${ARGO_DOMAIN}/${UUID}/auto
 
 订阅 QRcode:
 模版:
-https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://${ARGO_DOMAIN}/${UUID}/auto
-
-模版:
 $(${WORK_DIR}/qrencode "https://${ARGO_DOMAIN}/${UUID}/auto")
 EOF
 
@@ -1383,9 +1380,7 @@ $(info " 自适应 Clash / V2rayN / Throne / ShadowRocket / SFI / SFA / SFM 客�
 模版:
 https://${ARGO_DOMAIN}/${UUID}/auto
 
- 订阅 QRcode:
-模版:
-https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://${ARGO_DOMAIN}/${UUID}/auto")
+ 订阅 QRcode:")
 
 $(hint "模版:")
 $(${WORK_DIR}/qrencode https://${ARGO_DOMAIN}/${UUID}/auto)
